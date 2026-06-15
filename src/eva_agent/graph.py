@@ -1,0 +1,101 @@
+"""Сборка графа LangGraph (ТЗ-2 §1): guards-in -> supervisor -> агенты -> critic -> guards-out -> finalize.
+
+Три оси ветвления: маршрутизация supervisor, critic accept/rework (повтор решает loop-policy),
+блокировки guard-узлов. Решение о повторе - у графа по loop-policy, критик лишь выносит вердикт.
+"""
+
+from __future__ import annotations
+
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+
+from eva_agent.nodes.agents import (
+    clarify,
+    critic,
+    data_gather,
+    finalize,
+    interface_agent,
+    legal_agent,
+    refuse,
+    supervisor,
+)
+from eva_agent.nodes.guards import input_guard, output_guard
+from eva_agent.settings import settings
+from eva_agent.state import AgentState
+from eva_agent.tracing import traced_node
+
+_INTENT_ROUTE = {
+    "legal_consult": "legal_agent",
+    "interface_consult": "interface_agent",
+    "mixed_diagnostic": "data_gather",
+    "need_clarification": "clarify",
+    "out_of_scope": "refuse",
+}
+
+
+def _route_after_input(state: AgentState) -> str:
+    return "refuse" if state.guard_in and state.guard_in.decision == "block" else "supervisor"
+
+
+def _route_after_supervisor(state: AgentState) -> str:
+    kind = state.intent.kind if state.intent else "out_of_scope"
+    return _INTENT_ROUTE.get(kind, "refuse")
+
+
+def _route_after_critic(state: AgentState) -> str:
+    """Loop-policy: accept -> finalize; rework и бюджет цикла не исчерпан -> target; иначе finalize."""
+    verdict = state.critic
+    if not verdict or verdict.decision == "accept":
+        return "finalize"
+    if verdict.target and state.loop_count <= settings.max_loops:
+        return verdict.target
+    return "finalize"
+
+
+def build_graph() -> CompiledStateGraph:
+    graph = StateGraph(AgentState)
+    # traced_node - обертка в span LangFuse (узел дерева вызовов); no-op без ключей.
+    graph.add_node("input_guard", traced_node("input_guard", input_guard))
+    graph.add_node("supervisor", traced_node("supervisor", supervisor))
+    graph.add_node("legal_agent", traced_node("legal_agent", legal_agent))
+    graph.add_node("interface_agent", traced_node("interface_agent", interface_agent))
+    graph.add_node("data_gather", traced_node("data_gather", data_gather))
+    graph.add_node("critic", traced_node("critic", critic))
+    graph.add_node("finalize", traced_node("finalize", finalize))
+    graph.add_node("output_guard", traced_node("output_guard", output_guard))
+    graph.add_node("clarify", traced_node("clarify", clarify))
+    graph.add_node("refuse", traced_node("refuse", refuse))
+
+    graph.add_edge(START, "input_guard")
+    graph.add_conditional_edges(
+        "input_guard", _route_after_input, {"refuse": "refuse", "supervisor": "supervisor"}
+    )
+    graph.add_conditional_edges(
+        "supervisor",
+        _route_after_supervisor,
+        {
+            "legal_agent": "legal_agent",
+            "interface_agent": "interface_agent",
+            "data_gather": "data_gather",
+            "clarify": "clarify",
+            "refuse": "refuse",
+        },
+    )
+    graph.add_edge("data_gather", "interface_agent")
+    graph.add_edge("legal_agent", "critic")
+    graph.add_edge("interface_agent", "critic")
+    graph.add_conditional_edges(
+        "critic",
+        _route_after_critic,
+        {
+            "finalize": "finalize",
+            "legal_agent": "legal_agent",
+            "interface_agent": "interface_agent",
+            "data_gather": "data_gather",
+        },
+    )
+    graph.add_edge("finalize", "output_guard")
+    graph.add_edge("output_guard", END)
+    graph.add_edge("clarify", END)
+    graph.add_edge("refuse", END)
+    return graph.compile()

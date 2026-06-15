@@ -1,0 +1,54 @@
+{
+  "creatives": {
+    "CR-1": {
+      "title": "Баннер летней акции",
+      "distribution_form": "banner",
+      "ord_status": "registered",
+      "erid_token": "Pb3XmBtzt5H...",
+      "contract_id": "CT-1",
+      "contract_ord_status": "registered",
+      "blocking_reasons": []
+    },
+    "CR-2": {
+      "title": "Видео-промо нового тарифа",
+      "distribution_form": "video",
+      "ord_status": "pending_contract",
+      "erid_token": null,
+      "contract_id": "CT-2",
+      "contract_ord_status": "draft",
+      "blocking_reasons": [
+        "Договор CT-2 не зарегистрирован в ОРД",
+        "Сторона-исполнитель CT-2 не подтверждена в ОРД"
+      ]
+    },
+    "default": {
+      "title": "Креатив",
+      "distribution_form": "banner",
+      "ord_status": "draft",
+      "erid_token": null,
+      "contract_id": "CT-1",
+      "contract_ord_status": "registered",
+      "blocking_reasons": ["Креатив не отправлен на регистрацию в ОРД"]
+    }
+  },
+  "contracts": {
+    "CT-1": {
+      "number": "Д-2025/01",
+      "type": "executor",
+      "ord_status": "registered",
+      "parties": [
+        {"role": "customer", "inn": "7707083893", "name": "ООО Рекламодатель", "ord_status": "registered"},
+        {"role": "executor", "inn": "7736207543", "name": "ООО Агентство", "ord_status": "registered"}
+      ]
+    },
+    "CT-2": {
+      "number": "Д-2025/07",
+      "type": "executor",
+      "ord_status": "draft",
+      "parties": [
+        {"role": "customer", "inn": "7707083893", "name": "ООО Рекламодатель", "ord_status": "registered"},
+        {"role": "executor", "inn": "5024002119", "name": "ООО Площадка", "ord_status": "pending"}
+      ]
+    }
+  }
+}

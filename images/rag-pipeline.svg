@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="440" viewBox="0 0 840 440" font-family="Segoe UI, Roboto, sans-serif">
+  <defs>
+    <marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#5b6472"/>
+    </marker>
+    <style>
+      .t{font-size:13px;fill:#0f1117;text-anchor:middle;dominant-baseline:middle;font-weight:600}
+      .ts{font-size:10.5px;fill:#5b6472;text-anchor:middle;dominant-baseline:middle}
+      .e{stroke:#5b6472;stroke-width:1.6;fill:none;marker-end:url(#a)}
+      .h{font-size:12px;fill:#7c5cff;font-weight:700}
+    </style>
+  </defs>
+  <rect x="0" y="0" width="840" height="440" fill="#ffffff"/>
+  <text x="28" y="34" font-size="19" font-weight="700" fill="#0f1117">RAG - поиск по закону «О рекламе» (38-ФЗ)</text>
+  <text x="28" y="56" font-size="12.5" fill="#5b6472">сверху - как наполняем базу (один раз) · снизу - как ищем на каждый запрос</text>
+
+  <!-- INDEXING ROW -->
+  <text x="28" y="92" class="h">Индексация (offline)</text>
+
+  <rect x="28"  y="104" width="130" height="56" rx="10" fill="#eef0f4" stroke="#c7ccd6"/>
+  <text class="t" x="93" y="126">Текст 38-ФЗ</text>
+  <text class="ts" x="93" y="143">исходный закон</text>
+
+  <rect x="196" y="104" width="146" height="56" rx="10" fill="#e8f0fb" stroke="#3a7bd5"/>
+  <text class="t" x="269" y="124">splitter</text>
+  <text class="ts" x="269" y="140">режем по статьям</text>
+  <text class="ts" x="269" y="153">+ метаданные, in_force</text>
+
+  <rect x="380" y="104" width="170" height="56" rx="10" fill="#e6f3ee" stroke="#2bb673"/>
+  <text class="t" x="465" y="124">USER-bge-m3</text>
+  <text class="ts" x="465" y="140">текст → векторы (1024)</text>
+  <text class="ts" x="465" y="153">поиск по смыслу</text>
+
+  <rect x="588" y="104" width="170" height="56" rx="10" fill="#efe9ff" stroke="#7c5cff"/>
+  <text class="t" x="673" y="124">PostgreSQL</text>
+  <text class="t" x="673" y="140">+ pgvector</text>
+  <text class="ts" x="673" y="153">векторы + метаданные</text>
+
+  <path class="e" d="M158,132 L196,132"/>
+  <path class="e" d="M342,132 L380,132"/>
+  <path class="e" d="M550,132 L588,132"/>
+
+  <!-- RETRIEVAL ROW -->
+  <text x="28" y="232" class="h">Поиск (на каждый запрос)</text>
+
+  <rect x="28" y="248" width="120" height="56" rx="10" fill="#eef0f4" stroke="#c7ccd6"/>
+  <text class="t" x="88" y="270">Запрос</text>
+  <text class="ts" x="88" y="286">«нужен ли erid…»</text>
+
+  <rect x="184" y="240" width="170" height="72" rx="10" fill="#e8f0fb" stroke="#3a7bd5"/>
+  <text class="t" x="269" y="259">гибридный поиск</text>
+  <text class="ts" x="269" y="277">dense (по смыслу)</text>
+  <text class="ts" x="269" y="292">+ sparse (по словам)</text>
+
+  <rect x="392" y="248" width="110" height="56" rx="10" fill="#fff7da" stroke="#d8b41e"/>
+  <text class="t" x="447" y="270">RRF</text>
+  <text class="ts" x="447" y="286">объединение</text>
+
+  <rect x="540" y="240" width="160" height="72" rx="10" fill="#e6f3ee" stroke="#2bb673"/>
+  <text class="t" x="620" y="263">bge-reranker</text>
+  <text class="t" x="620" y="279">-v2-m3</text>
+  <text class="ts" x="620" y="296">переранжирование</text>
+
+  <rect x="738" y="248" width="80" height="56" rx="10" fill="#fff1de" stroke="#e0a33a"/>
+  <text class="ts" x="778" y="268">фильтр</text>
+  <text class="t" x="778" y="284" font-size="12">in_force</text>
+
+  <path class="e" d="M148,276 L184,276"/>
+  <path class="e" d="M354,276 L392,276"/>
+  <path class="e" d="M502,276 L540,276"/>
+  <path class="e" d="M700,276 L738,276"/>
+
+  <!-- pgvector feeds retrieval -->
+  <path class="e" d="M673,160 C673,200 269,200 269,240" stroke-dasharray="5 3"/>
+  <text class="ts" x="430" y="195" fill="#7c5cff">та же база pgvector</text>
+
+  <!-- result to agent -->
+  <rect x="320" y="372" width="200" height="44" rx="10" fill="#e6f3ee" stroke="#2bb673"/>
+  <text class="t" x="420" y="389">→ legal_agent</text>
+  <text class="ts" x="420" y="405">нормы с цитатами для ответа</text>
+  <path class="e" d="M778,304 C778,350 520,360 480,372"/>
+</svg>

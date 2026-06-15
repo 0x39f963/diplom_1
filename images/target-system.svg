@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="540" viewBox="0 0 900 540" font-family="Segoe UI, Roboto, sans-serif">
+  <defs>
+    <marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#5b6472"/>
+    </marker>
+    <marker id="ab" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#3a7bd5"/>
+    </marker>
+    <style>
+      .t{font-size:13px;fill:#0f1117;text-anchor:middle;dominant-baseline:middle;font-weight:600}
+      .ts{font-size:11px;fill:#5b6472;text-anchor:middle;dominant-baseline:middle}
+      .tl{font-size:11.5px;fill:#34405a;dominant-baseline:middle}
+      .e{stroke:#5b6472;stroke-width:1.7;fill:none;marker-end:url(#a)}
+      .lbl{font-size:11px;fill:#5b6472}
+    </style>
+  </defs>
+  <rect x="0" y="0" width="900" height="540" fill="#ffffff"/>
+  <text x="28" y="34" font-size="19" font-weight="700" fill="#0f1117">Целевая система: AI-агент выполняет команды в системе маркетингового агентства</text>
+  <text x="28" y="56" font-size="12.5" fill="#5b6472">пользователь пишет задачу словами - агент сам выполняет ее через данные системы</text>
+
+  <!-- Telegram -->
+  <rect x="28" y="120" width="170" height="92" rx="12" fill="#e8f0fb" stroke="#3a7bd5"/>
+  <text class="t" x="113" y="146">Пользователь</text>
+  <text class="ts" x="113" y="164">Telegram-бот</text>
+  <text class="ts" x="113" y="186" font-style="italic">«прикрепи договор</text>
+  <text class="ts" x="113" y="200" font-style="italic">по вчерашнему заказу»</text>
+
+  <!-- AI agent -->
+  <rect x="300" y="86" width="300" height="320" rx="14" fill="#efe9ff" stroke="#7c5cff"/>
+  <text x="450" y="110" font-size="15" font-weight="700" fill="#0f1117" text-anchor="middle">AI-агент</text>
+
+  <rect x="320" y="128" width="260" height="56" rx="9" fill="#ffffff" stroke="#c7ccd6"/>
+  <text class="tl" x="334" y="148">1. понять команду на естественном</text>
+  <text class="tl" x="334" y="166">    языке</text>
+
+  <rect x="320" y="196" width="260" height="60" rx="9" fill="#ffffff" stroke="#c7ccd6"/>
+  <text class="tl" x="334" y="214">2. отобрать данные через tool calling</text>
+  <text class="tl" x="334" y="232">    по схеме данных (заказы, договоры)</text>
+
+  <rect x="320" y="268" width="260" height="56" rx="9" fill="#fff1de" stroke="#e0a33a"/>
+  <text class="tl" x="334" y="288">3. проверить файл на prompt-инъекцию</text>
+  <text class="tl" x="334" y="306" fill="#7d5a14">защитный слой</text>
+
+  <rect x="320" y="336" width="260" height="56" rx="9" fill="#e6f3ee" stroke="#2bb673"/>
+  <text class="tl" x="334" y="356">4. выполнить действие: прикрепить</text>
+  <text class="tl" x="334" y="374">    договор к артефактам</text>
+
+  <!-- system -->
+  <rect x="700" y="120" width="172" height="220" rx="12" fill="#eef0f4" stroke="#c7ccd6"/>
+  <text class="t" x="786" y="144">Внутренняя</text>
+  <text class="t" x="786" y="162">система</text>
+  <text class="tl" x="716" y="190">заказы</text>
+  <text class="tl" x="716" y="210">договоры</text>
+  <text class="tl" x="716" y="230">контрагенты</text>
+  <text class="tl" x="716" y="250">креативы</text>
+  <text class="tl" x="716" y="270">размещения</text>
+  <text class="ts" x="786" y="306">чтение + запись</text>
+
+  <!-- arrows -->
+  <path class="e" d="M198,166 L300,166" marker-end="url(#ab)"/>
+  <text class="lbl" x="210" y="156" fill="#3a7bd5">команда</text>
+  <path class="e" d="M600,226 L700,226"/>
+  <text class="lbl" x="612" y="216">tool calling</text>
+  <path d="M700,300 C650,300 650,440 113,440 L113,212" stroke="#2bb673" stroke-width="1.7" fill="none" marker-end="url(#a)" stroke-dasharray="6 4"/>
+  <text class="lbl" x="360" y="432" fill="#2bb673">ответ в Telegram</text>
+
+  <!-- status strip -->
+  <rect x="28" y="476" width="844" height="44" rx="10" fill="#f3f4f7" stroke="#d8dde6"/>
+  <text x="44" y="494" font-size="12" font-weight="700" fill="#0f1117">Сейчас в работе:</text>
+  <text x="44" y="510" font-size="11.5" fill="#34405a">обкатываю первые цепочки на локальной видеокарте (Qwen 3.5 9B) и сравниваю с облачными моделями; в этом репозитории - read-only консультант и классификация запросов, запись действий - следующий этап.</text>
+</svg>

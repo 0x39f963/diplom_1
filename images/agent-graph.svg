@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="760" viewBox="0 0 820 760" font-family="Segoe UI, Roboto, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#5b6472"/>
+    </marker>
+    <marker id="arrR" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#d9534f"/>
+    </marker>
+    <marker id="arrL" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#e0a33a"/>
+    </marker>
+    <style>
+      .box{rx:10;ry:10;stroke-width:1.5}
+      .t{font-size:13px;fill:#0f1117;text-anchor:middle;dominant-baseline:middle;font-weight:600}
+      .ts{font-size:11px;fill:#5b6472;text-anchor:middle;dominant-baseline:middle}
+      .edge{stroke:#5b6472;stroke-width:1.6;fill:none;marker-end:url(#arr)}
+      .lbl{font-size:11px;fill:#5b6472;text-anchor:middle}
+      .star{font-size:12px;fill:#7c5cff;font-weight:700}
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="820" height="760" fill="#ffffff"/>
+  <text x="28" y="34" font-size="19" font-weight="700" fill="#0f1117">Ассистент Ева - граф мультиагента</text>
+  <text x="28" y="56" font-size="12.5" fill="#5b6472">нелинейный граф LangGraph · 3 точки ветвления (★) · supervisor + консультанты + критик + защита</text>
+
+  <!-- NL запрос -->
+  <rect class="box" x="320" y="80" width="180" height="40" fill="#eef0f4" stroke="#c7ccd6"/>
+  <text class="t" x="410" y="100">NL-запрос пользователя</text>
+
+  <!-- input_guard -->
+  <rect class="box" x="320" y="150" width="180" height="46" fill="#fff1de" stroke="#e0a33a"/>
+  <text class="t" x="410" y="167">input_guard</text>
+  <text class="ts" x="410" y="183">защита входа</text>
+  <text class="star" x="300" y="178">★1</text>
+  <path class="edge" d="M410,120 L410,150"/>
+
+  <!-- refuse (block branch, right) -->
+  <rect class="box" x="610" y="150" width="170" height="46" fill="#fdecec" stroke="#d9534f"/>
+  <text class="t" x="695" y="167">refuse - отказ</text>
+  <text class="ts" x="695" y="183">инъекция / вне темы</text>
+  <path d="M500,173 L610,173" stroke="#d9534f" stroke-width="1.6" fill="none" marker-end="url(#arrR)" stroke-dasharray="5 3"/>
+  <text class="lbl" x="555" y="166" fill="#d9534f">block</text>
+
+  <!-- supervisor -->
+  <rect class="box" x="320" y="232" width="180" height="46" fill="#efe9ff" stroke="#7c5cff"/>
+  <text class="t" x="410" y="249">supervisor</text>
+  <text class="ts" x="410" y="265">классификация · маршрут</text>
+  <text class="star" x="300" y="260">★2</text>
+  <path class="edge" d="M410,196 L410,232"/>
+  <text class="lbl" x="436" y="218">ok</text>
+
+  <!-- branch row: legal_agent / data_gather / interface_agent -->
+  <rect class="box" x="60" y="330" width="170" height="46" fill="#e6f3ee" stroke="#2bb673"/>
+  <text class="t" x="145" y="347">legal_agent</text>
+  <text class="ts" x="145" y="363">RAG 38-ФЗ + ответ</text>
+
+  <rect class="box" x="325" y="330" width="170" height="46" fill="#e8f0fb" stroke="#3a7bd5"/>
+  <text class="t" x="410" y="347">data_gather</text>
+  <text class="ts" x="410" y="363">данные (read-only)</text>
+
+  <rect class="box" x="590" y="330" width="170" height="46" fill="#e8f0fb" stroke="#3a7bd5"/>
+  <text class="t" x="675" y="347">interface_agent</text>
+  <text class="ts" x="675" y="363">справка + данные</text>
+
+  <!-- supervisor fan-out -->
+  <path class="edge" d="M360,278 C300,300 200,305 145,330"/>
+  <path class="edge" d="M410,278 L410,330"/>
+  <path class="edge" d="M460,278 C560,300 640,305 675,330"/>
+  <text class="lbl" x="250" y="300">legal_consult</text>
+  <text class="lbl" x="430" y="298">mixed</text>
+  <text class="lbl" x="585" y="300">interface_consult</text>
+
+  <!-- data_gather -> interface_agent -->
+  <path class="edge" d="M495,353 L590,353"/>
+
+  <!-- side note clarify/refuse -->
+  <rect class="box" x="325" y="408" width="170" height="34" fill="#f3f4f7" stroke="#c7ccd6"/>
+  <text class="ts" x="410" y="425">clarify (уточнить) · refuse (вне темы)</text>
+  <path class="edge" d="M410,278 C410,300 410,300 410,408" stroke-dasharray="4 3"/>
+
+  <!-- critic -->
+  <rect class="box" x="320" y="478" width="180" height="46" fill="#fff7da" stroke="#d8b41e"/>
+  <text class="t" x="410" y="495">critic</text>
+  <text class="ts" x="410" y="511">проверка черновика</text>
+  <text class="star" x="300" y="506">★3</text>
+  <path class="edge" d="M145,376 C145,440 300,470 320,495"/>
+  <path class="edge" d="M675,376 C675,440 520,470 500,495"/>
+
+  <!-- rework loop (back to agents) -->
+  <path d="M320,505 C150,520 30,470 28,400 C26,330 60,350 60,353"
+        stroke="#e0a33a" stroke-width="1.6" fill="none" marker-end="url(#arrL)" stroke-dasharray="5 3"/>
+  <text class="lbl" x="60" y="430" fill="#e0a33a">rework (петля, ≤ MAX_LOOPS)</text>
+
+  <!-- finalize -->
+  <rect class="box" x="320" y="568" width="180" height="44" fill="#eef0f4" stroke="#c7ccd6"/>
+  <text class="t" x="410" y="585">finalize</text>
+  <text class="ts" x="410" y="601">ответ + источники</text>
+  <path class="edge" d="M410,524 L410,568"/>
+  <text class="lbl" x="440" y="548">accept</text>
+
+  <!-- output_guard -->
+  <rect class="box" x="320" y="646" width="180" height="46" fill="#fff1de" stroke="#e0a33a"/>
+  <text class="t" x="410" y="663">output_guard</text>
+  <text class="ts" x="410" y="679">PII · canary · grounding</text>
+  <path class="edge" d="M410,612 L410,646"/>
+
+  <!-- answer -->
+  <rect class="box" x="320" y="716" width="180" height="34" fill="#e6f3ee" stroke="#2bb673"/>
+  <text class="t" x="410" y="733">Ответ с цитатами</text>
+  <path class="edge" d="M410,692 L410,716"/>
+
+  <!-- legend -->
+  <text class="lbl" x="610" y="470" text-anchor="start" fill="#0f1117" font-weight="600">Ветвления:</text>
+  <text class="lbl" x="610" y="488" text-anchor="start">★1 защита входа: block → refuse</text>
+  <text class="lbl" x="610" y="504" text-anchor="start">★2 supervisor: 5 веток по intent</text>
+  <text class="lbl" x="610" y="520" text-anchor="start">★3 critic: accept → finalize / rework → петля</text>
+</svg>

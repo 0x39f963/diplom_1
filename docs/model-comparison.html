@@ -1,0 +1,89 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Сравнение моделей - отчет по прогону</title>
+<style>
+ :root{--bg:#0f1117;--card:#171a23;--line:#262b38;--tx:#e7e9ee;--mut:#8b93a7;--ac:#7c5cff}
+ *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--tx);
+   font:15px/1.55 -apple-system,Segoe UI,Roboto,sans-serif}
+ .wrap{max-width:1060px;margin:0 auto;padding:32px 22px 70px}
+ h1{font-size:26px;margin:0 0 4px} h2{font-size:19px;margin:34px 0 12px;
+   border-bottom:1px solid var(--line);padding-bottom:7px}
+ .sub{color:var(--mut);margin:0 0 6px}
+ table{border-collapse:collapse;width:100%;font-size:14px;margin:6px 0}
+ th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:middle}
+ th{background:#1d212c;color:var(--mut);font-size:12px;font-weight:600}
+ td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+ td.num.big{font-size:17px;font-weight:700}
+ td.model small,td.num small{display:block;color:var(--mut);font-weight:400;font-size:11px}
+ tr.win td{background:rgba(43,182,115,.10)} tr.win td.model b{color:#3ad29f}
+ .bar{display:inline-block;width:64px;height:7px;background:#10131b;border-radius:4px;vertical-align:middle;margin-left:6px}
+ .bar span{display:block;height:7px;border-radius:4px;opacity:.6}
+ td.num.g{color:#3ad29f} td.num.r{color:#ff6b6b} td.num.y{color:#ffb454}
+ .find{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--ac);
+   border-radius:8px;padding:12px 16px;margin:10px 0;font-size:14px}
+ .find b{color:#fff} .note{color:var(--mut);font-size:13px;margin-top:8px}
+ code{background:#222736;padding:1px 5px;border-radius:4px;font-size:12px}
+</style></head><body><div class="wrap">
+
+<h1>Ассистент Ева - сравнение моделей</h1>
+<p class="sub">Один и тот же бенчмарк <code>benchmark_big.jsonl</code> (122 запросов:
+40 инъекции / 51 смешанные с данными / 31 юридические). Один прогон = полный граф агента.
+Модель переключается через настройки, без правок кода.</p>
+
+<h2>Сводное сравнение</h2>
+<table>
+<tr><th>Модель</th><th>success-rate</th><th>assert</th><th>tool-call</th><th>p50</th><th>p95</th>
+<th>cost/запрос</th><th>Σ cost</th></tr>
+<tr class="win">
+      <td class="model"><b>Gemini 3.1 Flash Lite</b><small>облако (Google)</small></td>
+      <td class="num big">84%<small>103/122</small></td>
+      <td class="num">179/203</td>
+      <td class="num">33/51</td>
+      <td class="num">5.8s</td>
+      <td class="num">18s <div class="bar"><span style="width:28%;background:#2bb673"></span></div></td>
+      <td class="num">$0.0012</td>
+      <td class="num">$0.1447</td></tr><tr class="">
+      <td class="model"><b>Qwen 3.5 9B</b><small>локально, видеокарта (Ollama)</small></td>
+      <td class="num big">75%<small>92/122</small></td>
+      <td class="num">158/203</td>
+      <td class="num">28/51</td>
+      <td class="num">27.2s</td>
+      <td class="num">67s <div class="bar"><span style="width:100%;background:#2bb673"></span></div></td>
+      <td class="num">$0</td>
+      <td class="num">$0</td></tr><tr class="">
+      <td class="model"><b>Llama 3.3 70B Instruct</b><small>облако (Meta)</small></td>
+      <td class="num big">63%<small>77/122</small></td>
+      <td class="num">132/203</td>
+      <td class="num">25/51</td>
+      <td class="num">12.7s</td>
+      <td class="num">63s <div class="bar"><span style="width:95%;background:#2bb673"></span></div></td>
+      <td class="num">$0.48m</td>
+      <td class="num">$0.0581</td></tr>
+</table>
+<p class="note">success-rate - доля запросов, где прошли все проверки. p50/p95 - медиана и 95-й перцентиль
+времени ответа. Локальная модель - $0 (своя видеокарта, без оплаты API).</p>
+
+<h2>Разбивка по типам запросов (верно / всего)</h2>
+<table><tr><th>Модель</th><th>Инъекции (блокировка)</th><th>Юридические (RAG)</th><th>Смешанные с данными</th></tr><tr><td class="model"><b>Gemini 3.1 Flash Lite</b></td><td class="num g">40/40</td><td class="num g">31/31</td><td class="num y">32/51</td></tr><tr><td class="model"><b>Qwen 3.5 9B</b></td><td class="num y">39/40</td><td class="num y">27/31</td><td class="num r">26/51</td></tr><tr><td class="model"><b>Llama 3.3 70B Instruct</b></td><td class="num y">35/40</td><td class="num y">23/31</td><td class="num r">19/51</td></tr></table>
+
+<h2>Что видно по цифрам</h2>
+<div class="find"><b>Gemini 3.1 Flash - лучший и самый быстрый.</b> 84% при p50 5.8 секунды.
+Инъекции и юридические вопросы - без промахов (40/40 и 31/31).</div>
+<div class="find"><b>Локальная Qwen 3.5 9B на видеокарте - 75%, бесплатно.</b> Маленькая модель
+обходит облачную Llama 70B (75% против 63%) и почти идеально ловит инъекции (39/40). Цена - скорость:
+зацикливается на сложных запросах, медленнее всех (p50 27 секунд).</div>
+<div class="find"><b>Llama 3.3 70B - самая большая, но слабее.</b> 63% и пропустила 5 инъекций из 40.
+Размер модели не гарантирует качество на конкретной задаче.</div>
+<div class="find"><b>Общее слабое место - смешанные запросы с данными.</b> Здесь нужно и выбрать
+правильный инструмент, и совместить данные с нормой - проседают все модели.</div>
+
+<h2>Как мерили</h2>
+<p class="sub">Три типа проверок на каждый запрос: по правилам (assert: интент, цитата, блокировка,
+вызов инструмента), оценка другой моделью (LLM-as-judge) и правильность вызова инструмента (tool-call).
+Условия одинаковы: один бенчмарк, один граф, все роли узлов переключены на тестируемую модель.</p>
+<p class="note">Оговорка: LLM-as-judge в этом прогоне - self-judge (модель оценивает сама себя),
+поэтому судейская метрика читается с поправкой; для сравнения опираемся на объективные - success-rate,
+время, стоимость. Модель GPT-5 nano из сравнения исключена: на смешанных запросах с данными она
+тратила 120-160 секунд на запрос (reasoning-модель переусложняет задачи с инструментами).</p>
+
+</div></body></html>

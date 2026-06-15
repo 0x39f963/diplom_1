@@ -1,0 +1,30 @@
+# secrets / env
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# local data / infra
+qdrant_storage/
+.chainlit/
+chainlit.md
+.langfuse/
+*.log
+evals/out/
+
+# os
+.DS_Store

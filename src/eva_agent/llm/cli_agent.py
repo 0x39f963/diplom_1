@@ -19,6 +19,7 @@ import tempfile
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
@@ -30,6 +31,16 @@ Provider = Literal["claude", "codex"]
 
 _BACKOFF_CAP_SEC = 5.0
 _JSON_MODE_INSTRUCTION = "Return strict JSON only. Do not wrap it in Markdown."
+
+
+@lru_cache(maxsize=1)
+def _isolated_cwd() -> str:
+    """Пустая рабочая папка для запуска CLI.
+
+    Запуск в нейтральной директории не дает агентскому CLI подхватить рабочие
+    настройки и инструкции проекта (он должен отвечать как обычная модель).
+    """
+    return tempfile.mkdtemp(prefix="eva-cli-sandbox-")
 
 
 @dataclass(frozen=True)
@@ -215,6 +226,7 @@ class CliAgentClient(LLMClient):
             text=True,
             timeout=self._timeout,
             check=False,
+            cwd=_isolated_cwd(),
         )
         return completed
 

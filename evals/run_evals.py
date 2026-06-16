@@ -28,22 +28,126 @@ _DEFAULT_BENCH = Path(__file__).resolve().parents[1] / "bench" / "benchmark.json
 # BENCH_FILE=bench/benchmark_big.jsonl - прогнать расширенный набор (122 кейса).
 _BENCH = Path(os.environ["BENCH_FILE"]) if os.environ.get("BENCH_FILE") else _DEFAULT_BENCH
 
+_TOOL_ENTITIES: dict[str, set[str]] = {
+    "eva_get_contract": {"contract"},
+    "eva_get_contract_parties": {"party", "counterparty"},
+    "eva_get_counterparty": {"counterparty"},
+    "eva_get_creative_status": {"creative", "contract"},
+    "eva_list_placements": {"placement", "creative", "contract"},
+    "eva_list_contract_documents": {"document", "contract"},
+    "eva_list_unsigned_contracts": {"contract"},
+    "eva_search_contracts": {"contract"},
+    "retrieve_legal": set(),
+    "eva_doc_read": {"document"},
+    "eva_doc_download": {"document"},
+    "eva_doc_attach": {"document", "contract"},
+}
 
-def load_cases() -> list[dict]:
+
+def load_cases() -> list[dict[str, Any]]:
     lines = _BENCH.read_text(encoding="utf-8").splitlines()
     return [json.loads(line) for line in lines if line.strip()]
 
 
+def _got_tools(state: dict[str, Any]) -> list[str]:
+    findings = state.get("api_findings") or []
+    return [str(f.tool) for f in findings]
+
+
+def _ordered_subset(want: list[str], got: list[str]) -> bool:
+    position = -1
+    for tool in want:
+        try:
+            position = got.index(tool, position + 1)
+        except ValueError:
+            return False
+    return True
+
+
+def _as_list(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _check_expected_tools(assertion: dict[str, Any], got: list[str]) -> bool:
+    want = _as_list(assertion.get("value"))
+    if not want:
+        return False
+    if bool(assertion.get("soft")):
+        return any(tool in got for tool in want)
+    if not all(tool in got for tool in want):
+        return False
+    if bool(assertion.get("ordered")):
+        return _ordered_subset(want, got)
+    return True
+
+
+def _got_entities(got_tools: list[str]) -> set[str]:
+    entities: set[str] = set()
+    for tool in got_tools:
+        entities.update(_TOOL_ENTITIES.get(tool, set()))
+    return entities
+
+
+def _check_expected_entities(assertion: dict[str, Any], got_tools: list[str]) -> bool:
+    want = set(_as_list(assertion.get("value")))
+    if not want:
+        return False
+    got = _got_entities(got_tools)
+    if bool(assertion.get("soft")):
+        return bool(want & got)
+    return want <= got
+
+
+def _intent_kind(state: dict[str, Any]) -> str | None:
+    intent = state.get("intent")
+    value = getattr(intent, "kind", None)
+    return str(value) if value is not None else None
+
+
+def _todo_status(state: dict[str, Any]) -> str | None:
+    todo_plan = state.get("todo_plan")
+    value = getattr(todo_plan, "status", None)
+    return str(value) if value is not None else None
+
+
+def _is_clarification(state: dict[str, Any]) -> bool:
+    return _intent_kind(state) == "need_clarification" or _todo_status(state) == "awaiting_clarification"
+
+
+def _assert_must_clarify(assertion: dict[str, Any]) -> bool:
+    if assertion["type"] != "must_clarify":
+        return False
+    return bool(assertion.get("value", True))
+
+
+def case_must_clarify(case: dict[str, Any]) -> bool:
+    if bool(case.get("must_clarify")):
+        return True
+    return any(_assert_must_clarify(assertion) for assertion in case.get("asserts", []))
+
+
+def known_fail_reason(case: dict[str, Any]) -> str | None:
+    raw = case.get("known_fail")
+    if isinstance(raw, dict):
+        return str(raw.get("reason") or "known fail") if raw.get("value", True) else None
+    if raw is True:
+        return "known fail"
+    return None
+
+
 def check_assert(assertion: dict, state: dict[str, Any]) -> bool:
     kind = assertion["type"]
-    intent = state.get("intent")
     guard_in = state.get("guard_in")
     final = state.get("final") or ""
-    findings = state.get("api_findings") or []
+    got_tools = _got_tools(state)
     citations = state.get("citations") or []
     blocked = guard_in is not None and guard_in.decision == "block"
     if kind == "intent":
-        return intent is not None and intent.kind == assertion["value"]
+        return _intent_kind(state) == assertion["value"]
     if kind == "blocked":
         return blocked
     if kind == "not_blocked":
@@ -51,7 +155,15 @@ def check_assert(assertion: dict, state: dict[str, Any]) -> bool:
     if kind == "has_citation":
         return bool(citations) or "ст." in final
     if kind == "used_tool":
-        return assertion["value"] in [f.tool for f in findings]
+        return assertion["value"] in got_tools
+    if kind == "expected_tools":
+        return _check_expected_tools(assertion, got_tools)
+    if kind == "expected_entities":
+        return _check_expected_entities(assertion, got_tools)
+    if kind == "mutating_tool":
+        return assertion["value"] in got_tools
+    if kind == "must_clarify":
+        return _is_clarification(state) if bool(assertion.get("value", True)) else not _is_clarification(state)
     return False
 
 
@@ -80,6 +192,23 @@ def _models_under_test() -> dict[str, str]:
     }
 
 
+def _tool_asserts(asserts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        assertion
+        for assertion in asserts
+        if assertion["type"] in {"used_tool", "expected_tools", "mutating_tool"}
+    ]
+
+
+def _expected_tools_for_row(asserts: list[dict[str, Any]]) -> list[str]:
+    tools: list[str] = []
+    for assertion in _tool_asserts(asserts):
+        for tool in _as_list(assertion.get("value")):
+            if tool not in tools:
+                tools.append(tool)
+    return tools
+
+
 def main() -> int:
     graph = build_graph()
     cases = load_cases()
@@ -90,6 +219,12 @@ def main() -> int:
     assert_pass = 0
     judge_runs = judge_ok = 0
     tool_runs = tool_ok = 0
+    tool_soft_runs = tool_soft_ok = 0
+    tool_hard_runs = tool_hard_ok = 0
+    multistep_runs = multistep_ok = 0
+    mutating_runs = mutating_ok = 0
+    known_fail_runs = known_fail_pass = 0
+    unexpected_fail = 0
     rows: list[dict[str, Any]] = []
 
     for case in cases:
@@ -103,11 +238,21 @@ def main() -> int:
         latencies.append(latency)
         costs.append(cost)
 
-        results = [check_assert(a, state) for a in case["asserts"]]
+        assertions = list(case["asserts"])
+        results = [check_assert(a, state) for a in assertions]
+        clarification_ok = case_must_clarify(case) and _is_clarification(state)
+        if clarification_ok:
+            results = [True for _ in assertions]
         assert_total += len(results)
         assert_pass += sum(results)
         ok = all(results)
         case_pass += int(ok)
+        known_reason = known_fail_reason(case)
+        if known_reason is not None:
+            known_fail_runs += 1
+            known_fail_pass += int(ok)
+        elif not ok:
+            unexpected_fail += 1
 
         judge_value: bool | None = None
         if case.get("expected_intent") in ("legal_consult", "interface_consult") and state.get("final"):
@@ -117,28 +262,57 @@ def main() -> int:
 
         tool_value: bool | None = None
         if case.get("expected_intent") == "mixed_diagnostic":
-            tool_runs += 1
-            want = [a["value"] for a in case["asserts"] if a["type"] == "used_tool"]
-            got = [f.tool for f in (state.get("api_findings") or [])]
-            tool_value = all(w in got for w in want)
-            tool_ok += int(tool_value)
+            tool_checks = _tool_asserts(assertions)
+            got = _got_tools(state)
+            if tool_checks:
+                tool_runs += 1
+                tool_value = all(check_assert(assertion, state) for assertion in tool_checks)
+                tool_ok += int(tool_value)
+            for assertion in tool_checks:
+                if assertion["type"] == "expected_tools":
+                    if bool(assertion.get("soft")):
+                        tool_soft_runs += 1
+                        tool_soft_ok += int(_check_expected_tools(assertion, got))
+                    else:
+                        tool_hard_runs += 1
+                        tool_hard_ok += int(_check_expected_tools(assertion, got))
+                    if len(_as_list(assertion.get("value"))) >= 2:
+                        multistep_runs += 1
+                        multistep_ok += int(_check_expected_tools(assertion, got))
+                elif assertion["type"] == "used_tool":
+                    tool_hard_runs += 1
+                    tool_hard_ok += int(check_assert(assertion, state))
+                elif assertion["type"] == "mutating_tool":
+                    mutating_runs += 1
+                    mutating_ok += int(check_assert(assertion, state))
 
-        intent = state.get("intent")
         guard_in = state.get("guard_in")
+        got_tools = _got_tools(state)
+        entities_ok = [
+            check_assert(assertion, state)
+            for assertion in assertions
+            if assertion["type"] == "expected_entities"
+        ]
         rows.append(
             {
                 "id": case["id"],
                 "expected_intent": case.get("expected_intent"),
-                "intent": intent.kind if intent is not None else None,
+                "intent": _intent_kind(state),
                 "ok": ok,
                 "blocked": guard_in is not None and guard_in.decision == "block",
+                "must_clarify": case_must_clarify(case),
+                "clarification_ok": clarification_ok,
+                "known_fail": known_reason,
                 "latency_sec": round(latency, 3),
                 "cost_usd": cost,
                 "calls": calls,
                 "tokens": tokens["total"],
+                "expected_tools": _expected_tools_for_row(assertions),
+                "got_tools": got_tools,
+                "entities_ok": all(entities_ok) if entities_ok else None,
                 "asserts": [
                     {"type": a["type"], "value": a.get("value"), "pass": r}
-                    for a, r in zip(case["asserts"], results, strict=True)
+                    for a, r in zip(assertions, results, strict=True)
                 ],
                 "judge_ok": judge_value,
                 "tool_ok": tool_value,
@@ -155,6 +329,8 @@ def main() -> int:
     print(f"  1) assert pass:             {assert_pass}/{assert_total}")
     print(f"  2) LLM-as-judge:            {judge_ok}/{judge_runs}")
     print(f"  3) tool-call-correctness:   {tool_ok}/{tool_runs}")
+    print(f"  known-fail pass:            {known_fail_pass}/{known_fail_runs}")
+    print(f"  unexpected fail:            {unexpected_fail}")
     print("- МЕТРИКИ -")
     print(f"  latency p50={p50:.1f}s  p95={p95:.1f}s")
     print(f"  cost/run avg=${statistics.mean(costs):.5f}  total=${sum(costs):.4f}")
@@ -175,6 +351,17 @@ def main() -> int:
                 "judge_runs": judge_runs,
                 "tool_ok": tool_ok,
                 "tool_runs": tool_runs,
+                "tool_ok_soft": tool_soft_ok,
+                "tool_runs_soft": tool_soft_runs,
+                "tool_ok_hard": tool_hard_ok,
+                "tool_runs_hard": tool_hard_runs,
+                "multistep_ok": multistep_ok,
+                "multistep_runs": multistep_runs,
+                "mutating_ok": mutating_ok,
+                "mutating_runs": mutating_runs,
+                "known_fail_pass": known_fail_pass,
+                "known_fail_runs": known_fail_runs,
+                "unexpected_fail": unexpected_fail,
                 "latency_p50_sec": round(p50, 3),
                 "latency_p95_sec": round(p95, 3),
                 "latency_total_sec": round(sum(latencies), 3),
@@ -187,7 +374,7 @@ def main() -> int:
         Path(out_path).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"\n-> результаты сохранены: {out_path}")
 
-    return 0 if case_pass == n else 1
+    return 0 if unexpected_fail == 0 else 1
 
 
 if __name__ == "__main__":

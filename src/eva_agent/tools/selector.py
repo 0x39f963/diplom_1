@@ -109,6 +109,12 @@ def select_tools(intent: str | None, refs: EntityRefs) -> list[str]:
     tools: list[str] = []
     has_contract = refs.primary_contract is not None
 
+    if refs.document_ids:
+        if any(hint in text for hint in ("скач", "выгруз")):
+            _add(tools, "eva_doc_download")
+        elif any(hint in text for hint in ("проч", "открой", "что внутри", "содерж")):
+            _add(tools, "eva_doc_read")
+
     if refs.primary_counterparty is not None:
         _add(tools, "eva_get_counterparty")
 
@@ -160,6 +166,10 @@ def _args_for_tool(tool: str, refs: EntityRefs, query: str) -> dict[str, Any] | 
         if refs.primary_creative is None:
             return None
         return {"creative_id": refs.primary_creative}
+    if tool in {"eva_doc_read", "eva_doc_download"}:
+        if not refs.document_ids:
+            return None
+        return {"doc_id": refs.document_ids[0]}
     if tool == "eva_search_contracts":
         return {"q": query}
     if tool == "eva_kktu_suggest":

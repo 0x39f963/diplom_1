@@ -10,19 +10,38 @@ from eva_agent.mcp_docs.schemas import AttachmentFile
 from eva_agent.mock.data import OWNER_SCOPE
 from eva_agent.state import ApiFinding
 
+_DOC_ALIASES: dict[str, str] = {
+    "DOC-1": "co-CT-1-1",
+    "DOC-2": "co-CT-2-1",
+    "DOC-3": "co-CT-2-2",
+}
+
 
 def _finding(tool: str, args: dict[str, Any], data: dict[str, Any]) -> ApiFinding:
     return ApiFinding(tool=tool, args=args, data=data, owner_ref=OWNER_SCOPE)
 
 
+def _resolve_doc_id(doc_id: str) -> str:
+    return _DOC_ALIASES.get(doc_id.upper(), doc_id)
+
+
+def _doc_args(doc_id: str, resolved_doc_id: str) -> dict[str, Any]:
+    args: dict[str, Any] = {"doc_id": doc_id}
+    if resolved_doc_id != doc_id:
+        args["resolved_doc_id"] = resolved_doc_id
+    return args
+
+
 def eva_doc_read(doc_id: str) -> ApiFinding:
-    result = documents.read_document(doc_id)
-    return _finding("eva_doc_read", {"doc_id": doc_id}, result.model_dump())
+    resolved_doc_id = _resolve_doc_id(doc_id)
+    result = documents.read_document(resolved_doc_id)
+    return _finding("eva_doc_read", _doc_args(doc_id, resolved_doc_id), result.model_dump())
 
 
 def eva_doc_download(doc_id: str) -> ApiFinding:
-    result = documents.download_document(doc_id)
-    return _finding("eva_doc_download", {"doc_id": doc_id}, result.model_dump())
+    resolved_doc_id = _resolve_doc_id(doc_id)
+    result = documents.download_document(resolved_doc_id)
+    return _finding("eva_doc_download", _doc_args(doc_id, resolved_doc_id), result.model_dump())
 
 
 def eva_doc_attach(contract_id: str, file: AttachmentFile | Mapping[str, Any]) -> ApiFinding:
@@ -30,4 +49,3 @@ def eva_doc_attach(contract_id: str, file: AttachmentFile | Mapping[str, Any]) -
     result = documents.attach_document(contract_id, payload)
     args = {"contract_id": contract_id, "file_name": payload.file_name}
     return _finding("eva_doc_attach", args, result.model_dump())
-

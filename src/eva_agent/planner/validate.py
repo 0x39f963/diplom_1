@@ -10,7 +10,7 @@ from eva_agent.planner.catalog import AVAILABLE_TOOLS_DEFAULT, CATALOG, TodoSpec
 from eva_agent.planner.protocols import PROTOCOLS
 from eva_agent.tools.selector import EXECUTION_REGISTRY
 
-PLANNER_MIN_CONFIDENCE = 0.2
+PLANNER_MIN_CONFIDENCE = 0.45
 _INTERNAL_TODOS = frozenset({"parse_goal", "summarize_answer", "clarify"})
 
 

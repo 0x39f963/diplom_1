@@ -21,7 +21,7 @@ from typing import Any
 from eva_agent.llm.observability import langfuse_enabled
 from eva_agent.settings import Role, settings
 
-_ROLES: tuple[Role, ...] = ("reasoning", "default", "guard")
+_ROLES: tuple[Role, ...] = ("reasoning", "default", "guard", "planner")
 
 
 def _model_label() -> str:

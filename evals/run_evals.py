@@ -21,7 +21,7 @@ from typing import Any
 from eva_agent import metrics
 from eva_agent.graph import build_graph
 from eva_agent.llm.config import get_client
-from eva_agent.settings import settings
+from eva_agent.settings import Role, settings
 from eva_agent.tracing import run_request
 
 _DEFAULT_BENCH = Path(__file__).resolve().parents[1] / "bench" / "benchmark.jsonl"
@@ -73,9 +73,10 @@ def llm_judge(question: str, answer: str) -> bool:
 
 def _models_under_test() -> dict[str, str]:
     """Снимок «какая модель на какой роли» - для шапки отчета."""
+    roles: tuple[Role, ...] = ("reasoning", "default", "guard", "planner")
     return {
-        role: f"{settings.role_backend(role)}:{settings.role_model(role)}"  # type: ignore[arg-type]
-        for role in ("reasoning", "default", "guard")
+        role: f"{settings.role_backend(role)}:{settings.role_model(role)}"
+        for role in roles
     }
 
 

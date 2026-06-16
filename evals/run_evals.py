@@ -176,12 +176,12 @@ _JUDGE_SYS = (
 
 
 def llm_judge(question: str, answer: str) -> bool:
-    response = get_client("guard").invoke(
-        _JUDGE_SYS, f"ВОПРОС: {question}\n\nОТВЕТ: {answer}", temperature=0.0, json_mode=True
-    )
     try:
+        response = get_client("guard").invoke(
+            _JUDGE_SYS, f"ВОПРОС: {question}\n\nОТВЕТ: {answer}", temperature=0.0, json_mode=True
+        )
         return bool(json.loads(response.text).get("ok"))
-    except (json.JSONDecodeError, ValueError):
+    except Exception:
         return False
 
 
@@ -232,7 +232,11 @@ def main() -> int:
     for case in cases:
         metrics.start_run()
         started = time.monotonic()
-        state = run_request(graph, case["input"])  # один трейс LangFuse на кейс
+        try:
+            state = run_request(graph, case["input"])  # один трейс LangFuse на кейс
+        except Exception as exc:  # сетевой сбой на кейсе не должен ронять весь прогон
+            print(f"  [ERR] {case['id']:24} {type(exc).__name__}: {str(exc)[:60]}")
+            state = {}
         latency = time.monotonic() - started
         cost = metrics.run_cost_usd()
         calls = metrics.run_calls()

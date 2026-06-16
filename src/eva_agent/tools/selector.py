@@ -18,6 +18,7 @@ from eva_agent.mock.data import (
     eva_search_contracts,
 )
 from eva_agent.state import ApiFinding, Chunk
+from eva_agent.tools.doc_adapters import eva_doc_attach, eva_doc_download, eva_doc_read
 from eva_agent.tools.entity_ref import EntityRefs
 from eva_agent.tools.retrieve import retrieve_legal as _retrieve_legal
 
@@ -72,7 +73,9 @@ def eva_retrieve_legal(query: str) -> ApiFinding:
 EXECUTION_REGISTRY: dict[str, ToolFn] = {
     **TOOL_REGISTRY,
     "retrieve_legal": eva_retrieve_legal,
-    # TODO: добавить adapter'ы eva_doc_* после подключения MCP-слоя.
+    "eva_doc_read": eva_doc_read,
+    "eva_doc_download": eva_doc_download,
+    "eva_doc_attach": eva_doc_attach,
 }
 
 _DOC_HINTS = ("документ", "приложен", "не хватает", "оформлен", "акт")

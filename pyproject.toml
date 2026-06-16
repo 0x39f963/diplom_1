@@ -8,10 +8,16 @@ version = "0.1.0"
 description = "Учебный supervisor multi-agent (LangGraph) с защитным слоем - помощник по рекламному праву (38-ФЗ)."
 requires-python = ">=3.12"
 readme = "README.md"
+dependencies = [
+    "mcp>=1.10,<2",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["eva_agent*"]
+
+[tool.setuptools.package-data]
+"eva_agent.mcp_docs" = ["fixtures/documents.json", "fixtures/blobs/*"]
 
 [tool.ruff]
 line-length = 100

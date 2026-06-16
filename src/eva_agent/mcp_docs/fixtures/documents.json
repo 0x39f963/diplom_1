@@ -1,0 +1,89 @@
+{
+  "documents": {
+    "contract": {
+      "CT-1": [
+        {
+          "doc_id": "co-CT-1-1",
+          "entity_type": "contract",
+          "entity_id": "CT-1",
+          "doc_type": "contract_file",
+          "file_name": "contract-ct-1.txt",
+          "mime_type": "text/plain",
+          "status": "attached",
+          "blob_name": "contract-ct-1.txt"
+        },
+        {
+          "doc_id": "co-CT-1-2",
+          "entity_type": "contract",
+          "entity_id": "CT-1",
+          "doc_type": "act",
+          "file_name": "act-ct-1.txt",
+          "mime_type": "text/plain",
+          "status": "attached",
+          "blob_name": "act-ct-1.txt"
+        },
+        {
+          "doc_id": "co-CT-1-3",
+          "entity_type": "contract",
+          "entity_id": "CT-1",
+          "doc_type": "annex",
+          "file_name": "annex-ct-1.txt",
+          "mime_type": "text/plain",
+          "size": 0,
+          "status": "missing",
+          "locator": null
+        }
+      ],
+      "CT-2": [
+        {
+          "doc_id": "co-CT-2-1",
+          "entity_type": "contract",
+          "entity_id": "CT-2",
+          "doc_type": "contract_file",
+          "file_name": "contract-ct-2.txt",
+          "mime_type": "text/plain",
+          "status": "attached",
+          "blob_name": "contract-ct-2.txt"
+        },
+        {
+          "doc_id": "co-CT-2-2",
+          "entity_type": "contract",
+          "entity_id": "CT-2",
+          "doc_type": "act",
+          "file_name": "act-ct-2.txt",
+          "mime_type": "text/plain",
+          "size": 0,
+          "status": "missing",
+          "locator": null
+        }
+      ]
+    },
+    "creative": {
+      "CR-1": [
+        {
+          "doc_id": "cr-CR-1-1",
+          "entity_type": "creative",
+          "entity_id": "CR-1",
+          "doc_type": "creative_media",
+          "file_name": "creative-cr-1-banner.txt",
+          "mime_type": "text/plain",
+          "status": "attached",
+          "blob_name": "creative-cr-1-banner.txt"
+        }
+      ],
+      "CR-2": [
+        {
+          "doc_id": "cr-CR-2-1",
+          "entity_type": "creative",
+          "entity_id": "CR-2",
+          "doc_type": "creative_media",
+          "file_name": "creative-cr-2-video.bin",
+          "mime_type": "video/mp4",
+          "status": "attached",
+          "blob_name": "creative-cr-2-video.bin"
+        }
+      ]
+    }
+  }
+}
+

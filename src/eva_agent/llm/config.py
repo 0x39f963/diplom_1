@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from eva_agent import metrics
 from eva_agent.llm.base import LLMClient, LLMResponse
+from eva_agent.llm.cli_agent import CliAgentClient
 from eva_agent.llm.ollama_local import OllamaLocalClient
 from eva_agent.llm.openrouter import OpenRouterClient
 from eva_agent.settings import Role, settings
@@ -46,11 +47,29 @@ def get_client(role: Role) -> LLMClient:
             provider_only=settings.openrouter_provider_only,
             thinking=settings.qwen_thinking_force_on,
         )
-    else:
+    elif backend == "local":
         inner = OllamaLocalClient(
             model,
             base_url=settings.local_llm_base_url,
             keep_alive=settings.ollama_request_keep_alive,
             timeout=settings.llm_call_timeout_sec,
+        )
+    elif backend == "claude_cli":
+        inner = CliAgentClient(
+            provider="claude",
+            model=model,
+            effort=settings.role_effort(role),
+            binary=settings.eva_cli_claude_bin,
+            timeout=settings.llm_call_timeout_sec,
+            max_retries=settings.llm_provider_max_retries,
+        )
+    else:
+        inner = CliAgentClient(
+            provider="codex",
+            model=model,
+            effort=settings.role_effort(role),
+            binary=settings.eva_cli_codex_bin,
+            timeout=settings.llm_call_timeout_sec,
+            max_retries=settings.llm_provider_max_retries,
         )
     return _TrackedClient(inner)

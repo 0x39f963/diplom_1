@@ -11,7 +11,8 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-Backend = Literal["openrouter", "local"]
+Backend = Literal["openrouter", "local", "claude_cli", "codex_cli"]
+Effort = Literal["low", "medium", "high"]
 Role = Literal["reasoning", "default", "guard"]
 MockMode = Literal["fixtures", "random"]
 
@@ -39,8 +40,15 @@ class Settings(BaseSettings):
     llm_model_default: str = "qwen3.5:9b"
     llm_backend_guard: Backend = "openrouter"
     llm_model_guard: str = "qwen/qwen3.5-9b"
+    llm_effort_reasoning: Effort = "medium"
+    llm_effort_default: Effort = "medium"
+    llm_effort_guard: Effort = "medium"
     llm_call_timeout_sec: int = 300
     llm_provider_max_retries: int = 2
+
+    # CLI agents
+    eva_cli_claude_bin: str = "claude"
+    eva_cli_codex_bin: str = "codex"
 
     # Поиск по закону работает отдельным сервисом (адрес в RAG_API_BASE), агент ходит по HTTP
     rag_api_base: str = "http://localhost:8077"
@@ -65,6 +73,9 @@ class Settings(BaseSettings):
 
     def role_model(self, role: Role) -> str:
         return getattr(self, f"llm_model_{role}")
+
+    def role_effort(self, role: Role) -> Effort:
+        return getattr(self, f"llm_effort_{role}")
 
 
 settings = Settings()

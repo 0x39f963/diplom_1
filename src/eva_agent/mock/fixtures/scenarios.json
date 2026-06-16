@@ -31,24 +31,178 @@
       "blocking_reasons": ["Креатив не отправлен на регистрацию в ОРД"]
     }
   },
+  "counterparties": {
+    "CP-1": {
+      "name": "ООО Рекламодатель",
+      "inn": "7707083893",
+      "legal_type": "ul",
+      "ord_status": "registered"
+    },
+    "CP-2": {
+      "name": "ООО Агентство",
+      "inn": "7736207543",
+      "legal_type": "ul",
+      "ord_status": "registered"
+    },
+    "CP-3": {
+      "name": "ООО Площадка",
+      "inn": "5024002119",
+      "legal_type": "ul",
+      "ord_status": "pending"
+    }
+  },
   "contracts": {
     "CT-1": {
       "number": "Д-2025/01",
-      "type": "executor",
+      "contract_number": "Д-2025/01",
+      "contract_date": "2025-03-12",
+      "contract_type": "service",
+      "type": "service",
+      "chain_role": "initial",
       "ord_status": "registered",
+      "price": 480000,
+      "price_not_stipulated": false,
+      "comment": "",
       "parties": [
-        {"role": "customer", "inn": "7707083893", "name": "ООО Рекламодатель", "ord_status": "registered"},
-        {"role": "executor", "inn": "7736207543", "name": "ООО Агентство", "ord_status": "registered"}
+        {
+          "role": "customer",
+          "counterparty_id": "CP-1",
+          "inn": "7707083893",
+          "name": "ООО Рекламодатель",
+          "ord_status": "registered"
+        },
+        {
+          "role": "executor",
+          "counterparty_id": "CP-2",
+          "inn": "7736207543",
+          "name": "ООО Агентство",
+          "ord_status": "registered"
+        }
       ]
     },
     "CT-2": {
       "number": "Д-2025/07",
-      "type": "executor",
+      "contract_number": "Д-2025/07",
+      "contract_date": "2025-05-10",
+      "contract_type": "service",
+      "type": "service",
+      "chain_role": "initial",
       "ord_status": "draft",
+      "price": 210000,
+      "price_not_stipulated": false,
+      "comment": "Нужна регистрация исполнителя",
       "parties": [
-        {"role": "customer", "inn": "7707083893", "name": "ООО Рекламодатель", "ord_status": "registered"},
-        {"role": "executor", "inn": "5024002119", "name": "ООО Площадка", "ord_status": "pending"}
+        {
+          "role": "customer",
+          "counterparty_id": "CP-1",
+          "inn": "7707083893",
+          "name": "ООО Рекламодатель",
+          "ord_status": "registered"
+        },
+        {
+          "role": "executor",
+          "counterparty_id": "CP-3",
+          "inn": "5024002119",
+          "name": "ООО Площадка",
+          "ord_status": "pending"
+        }
+      ]
+    },
+    "CT-249": {
+      "number": "Д-2025/249",
+      "contract_number": "Д-2025/249",
+      "contract_date": "2026-06-15",
+      "contract_type": "mediation",
+      "type": "mediation",
+      "chain_role": "intermediate",
+      "ord_status": "draft",
+      "price": 125000,
+      "price_not_stipulated": false,
+      "comment": "Черновик договора за предыдущий день",
+      "parties": [
+        {
+          "role": "customer",
+          "counterparty_id": "CP-1",
+          "inn": "7707083893",
+          "name": "ООО Рекламодатель",
+          "ord_status": "registered"
+        },
+        {
+          "role": "executor",
+          "counterparty_id": "CP-2",
+          "inn": "7736207543",
+          "name": "ООО Агентство",
+          "ord_status": "registered"
+        }
       ]
     }
+  },
+  "placements": {
+    "CT-1": [
+      {
+        "id": "PL-1",
+        "contract_id": "CT-1",
+        "creative_id": "CR-1",
+        "creative_title": "Баннер летней акции",
+        "platform": "Площадка А",
+        "status": "scheduled",
+        "period": {"start": "2025-06-01", "end": "2025-06-30"},
+        "erid": "Pb3XmBtzt5H...",
+        "cost": 180000
+      }
+    ],
+    "CT-2": [
+      {
+        "id": "PL-2",
+        "contract_id": "CT-2",
+        "creative_id": "CR-2",
+        "creative_title": "Видео-промо нового тарифа",
+        "platform": "Площадка Б",
+        "status": "blocked",
+        "period": {"start": "2025-07-01", "end": "2025-07-31"},
+        "erid": null,
+        "cost": 210000
+      }
+    ]
+  },
+  "documents": {
+    "CT-1": [
+      {
+        "id": "DOC-1",
+        "doc_type": "contract",
+        "file_name": "dogovor-ct-1.pdf",
+        "mime_type": "application/pdf",
+        "size": 184320,
+        "status": "attached"
+      }
+    ],
+    "CT-2": [
+      {
+        "id": "DOC-2",
+        "doc_type": "contract",
+        "file_name": "dogovor-ct-2.pdf",
+        "mime_type": "application/pdf",
+        "size": 196608,
+        "status": "attached"
+      },
+      {
+        "id": "DOC-3",
+        "doc_type": "act",
+        "file_name": null,
+        "mime_type": null,
+        "size": null,
+        "status": "missing"
+      }
+    ],
+    "CT-249": [
+      {
+        "id": "DOC-249",
+        "doc_type": "annex",
+        "file_name": null,
+        "mime_type": null,
+        "size": null,
+        "status": "missing"
+      }
+    ]
   }
 }

@@ -6,10 +6,11 @@ import json
 from typing import Any
 
 from eva_agent.llm.config import get_client
-from eva_agent.mock.data import eva_get_creative_status, eva_list_unsigned_contracts
 from eva_agent.security.spotlight import SPOTLIGHT_INSTRUCTION, spotlight
 from eva_agent.state import AgentState, CriticVerdict, Intent
+from eva_agent.tools.entity_ref import extract_refs
 from eva_agent.tools.retrieve import retrieve_howto, retrieve_legal
+from eva_agent.tools.selector import run_selected_tools, select_tools
 
 _INTENT_KINDS = {
     "legal_consult", "interface_consult", "mixed_diagnostic", "need_clarification", "out_of_scope",
@@ -115,8 +116,14 @@ def interface_agent(state: AgentState) -> dict:
 
 
 def data_gather(state: AgentState) -> dict:
-    """Диагностика (read-only): собрать состояние системы под готовность размещения."""
-    findings = [eva_list_unsigned_contracts(), eva_get_creative_status("CR-2")]
+    """Диагностика (read-only): выбрать инструменты по запросу и найденным сущностям."""
+    query = state.user_input_clean or state.user_input_raw
+    refs = extract_refs(query)
+    intent_parts = [query]
+    if state.intent is not None:
+        intent_parts.extend([state.intent.kind, state.intent.rationale, " ".join(state.intent.needed_inputs)])
+    selected = select_tools(" ".join(part for part in intent_parts if part), refs)
+    findings = run_selected_tools(selected, refs, query)
     return {"api_findings": state.api_findings + findings}
 
 

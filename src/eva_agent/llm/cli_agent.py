@@ -188,6 +188,9 @@ class CliAgentClient(LLMClient):
         command = [
             self._binary,
             "exec",
+            "--skip-git-repo-check",
+            "--sandbox",
+            "read-only",
             "--json",
             "-m",
             self.model,

@@ -27,6 +27,8 @@ from eva_agent.tracing import run_request
 _DEFAULT_BENCH = Path(__file__).resolve().parents[1] / "bench" / "benchmark.jsonl"
 # BENCH_FILE=bench/benchmark_big.jsonl - прогнать расширенный набор (122 кейса).
 _BENCH = Path(os.environ["BENCH_FILE"]) if os.environ.get("BENCH_FILE") else _DEFAULT_BENCH
+# EVAL_SLEEP_SEC - пауза между кейсами (бережем лимиты подписочных бэкендов).
+_SLEEP_SEC = float(os.environ.get("EVAL_SLEEP_SEC", "0"))
 
 _TOOL_ENTITIES: dict[str, set[str]] = {
     "eva_get_contract": {"contract"},
@@ -319,6 +321,8 @@ def main() -> int:
             }
         )
         print(f"  [{'OK' if ok else 'XX'}] {case['id']:24} lat={latency:5.1f}s cost=${cost:.5f}")
+        if _SLEEP_SEC:
+            time.sleep(_SLEEP_SEC)
 
     n = len(cases)
     ordered = sorted(latencies)

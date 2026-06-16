@@ -7,7 +7,7 @@ from typing import Any
 
 from eva_agent.domain.plan import TodoPlan
 from eva_agent.llm.config import get_client
-from eva_agent.planner.build import build_plan
+from eva_agent.planner.build import build_plan, replan
 from eva_agent.planner.execute import execute_plan
 from eva_agent.planner.trace import trace_plan
 from eva_agent.security.spotlight import SPOTLIGHT_INSTRUCTION, spotlight
@@ -160,6 +160,20 @@ def data_gather(state: AgentState) -> dict:
 
 
 def _plan_for_state(state: AgentState, query: str) -> tuple[TodoPlan, int, str, str]:
+    memory = getattr(state, "memory", None)
+    if (
+        state.todo_plan is None
+        and memory is not None
+        and memory.is_continuation
+        and memory.prev_todo_plan is not None
+    ):
+        return (
+            replan(memory.prev_todo_plan, query, resolved_inputs=memory.resolved_inputs),
+            state.plan_attempts,
+            "replan",
+            "",
+        )
+
     if state.todo_plan is None:
         return build_plan(query, prior_meaning=_prior_meaning(state)), state.plan_attempts, "build", ""
 
@@ -188,11 +202,7 @@ def _prior_meaning(state: AgentState) -> str:
     memory = getattr(state, "memory", None)
     if memory is None:
         return ""
-    for attr in ("accumulated_meaning", "merged_context"):
-        value = getattr(memory, attr, "")
-        if isinstance(value, str) and value.strip():
-            return value
-    return ""
+    return memory.accumulated_meaning.strip()
 
 
 def _clarification_intent(state: AgentState, plan: TodoPlan) -> Intent:
@@ -237,7 +247,7 @@ def finalize(state: AgentState) -> dict:
 def clarify(state: AgentState) -> dict:
     needed = state.intent.needed_inputs if state.intent else []
     ask = "; ".join(needed) if needed else "уточните детали запроса"
-    return {"final": f"Чтобы ответить точно, уточните, пожалуйста: {ask}."}
+    return {"final": f"Чтобы ответить точно, уточните, пожалуйста: {ask}.", "open_question": ask}
 
 
 def refuse(state: AgentState) -> dict:

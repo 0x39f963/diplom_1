@@ -21,7 +21,7 @@ from typing import Any
 from eva_agent.llm.observability import langfuse_enabled
 from eva_agent.settings import Role, settings
 
-_ROLES: tuple[Role, ...] = ("reasoning", "default", "guard", "planner")
+_ROLES: tuple[Role, ...] = ("reasoning", "default", "guard", "planner", "memory")
 
 
 def _model_label() -> str:
@@ -47,13 +47,13 @@ def traced_node[NodeF: Callable[..., dict]](name: str, fn: NodeF) -> NodeF:
     return observe(name=name, as_type="agent", capture_input=False, capture_output=False)(fn)
 
 
-def run_request(graph: Any, user_input: str) -> dict:
+def run_request(graph: Any, user_input: str, *, session_id: str | None = None) -> dict:
     """Прогон графа как ОДИН трейс LangFuse: человек -> узлы-агенты -> ответ.
 
     Возвращает финальное состояние графа (как и обычный graph.invoke). Без ключей -
     обычный invoke без накладных.
     """
-    payload = {"user_input_raw": user_input}
+    payload = {"user_input_raw": user_input, "session_id": session_id}
     if not langfuse_enabled():
         return graph.invoke(payload)
 
@@ -64,7 +64,7 @@ def run_request(graph: Any, user_input: str) -> dict:
         name=f"agent-request - {_model_label()}",
         as_type="chain",
         input=user_input,
-        metadata={"models": _models_meta()},
+        metadata={"models": _models_meta(), "session_id": session_id},
     ):
         state = graph.invoke(payload)
         final = state.get("final") if isinstance(state, dict) else None

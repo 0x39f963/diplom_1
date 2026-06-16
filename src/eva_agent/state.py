@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from eva_agent.dialog.models import MemoryDecision
 from eva_agent.domain.plan import TodoPlan
 from eva_agent.security.verdict import GuardVerdict
 
@@ -70,9 +71,11 @@ class AgentState(BaseModel):
     """Состояние графа LangGraph (guards -> supervisor -> agents -> critic -> guards -> finalize)."""
 
     user_input_raw: str
+    session_id: str | None = None
     messages: list = Field(default_factory=list)
 
     user_input_clean: str | None = None     # после input_filter
+    memory: MemoryDecision | None = None
     guard_in: GuardVerdict | None = None
     guard_out: GuardVerdict | None = None
 
@@ -87,3 +90,4 @@ class AgentState(BaseModel):
     loop_count: int = 0
     citations: list[str] = Field(default_factory=list)
     final: str | None = None
+    open_question: str | None = None

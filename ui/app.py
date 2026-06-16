@@ -23,12 +23,14 @@ _GREETING = (
 
 @cl.on_chat_start
 async def start() -> None:
+    cl.user_session.set("session_id", cl.context.session.id)
     await cl.Message(content=_GREETING).send()
 
 
 @cl.on_message
 async def on_message(message: cl.Message) -> None:
-    state = await asyncio.to_thread(run_request, _graph, message.content)
+    session_id = cl.user_session.get("session_id") or cl.context.session.id
+    state = await asyncio.to_thread(run_request, _graph, message.content, session_id=session_id)
 
     guard_in = state.get("guard_in")
     intent = state.get("intent")

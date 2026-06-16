@@ -185,7 +185,7 @@ def llm_judge(question: str, answer: str) -> bool:
 
 def _models_under_test() -> dict[str, str]:
     """Снимок «какая модель на какой роли» - для шапки отчета."""
-    roles: tuple[Role, ...] = ("reasoning", "default", "guard", "planner")
+    roles: tuple[Role, ...] = ("reasoning", "default", "guard", "planner", "memory")
     return {
         role: f"{settings.role_backend(role)}:{settings.role_model(role)}"
         for role in roles

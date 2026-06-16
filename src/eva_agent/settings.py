@@ -13,7 +13,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Backend = Literal["openrouter", "local", "claude_cli", "codex_cli"]
 Effort = Literal["low", "medium", "high"]
-Role = Literal["reasoning", "default", "guard", "planner"]
+Role = Literal["reasoning", "default", "guard", "planner", "memory"]
 MockMode = Literal["fixtures", "random"]
 
 
@@ -42,10 +42,13 @@ class Settings(BaseSettings):
     llm_model_guard: str = "qwen/qwen3.5-9b"
     llm_backend_planner: Backend = "local"
     llm_model_planner: str = "qwen3.5:9b"
+    llm_backend_memory: Backend = "local"
+    llm_model_memory: str = "qwen3.5:9b"
     llm_effort_reasoning: Effort = "medium"
     llm_effort_default: Effort = "medium"
     llm_effort_guard: Effort = "medium"
     llm_effort_planner: Effort = "medium"
+    llm_effort_memory: Effort = "medium"
     llm_call_timeout_sec: int = 300
     llm_provider_max_retries: int = 2
 
@@ -62,6 +65,11 @@ class Settings(BaseSettings):
     eva_api_base: str = "mock"
     eva_login: str = "demo@example.local"
     eva_password: str = ""
+
+    # Диалоговая память
+    eva_dialog_db: str = ""
+    eva_dialog_session: str = ""
+    eva_dialog_summarize_after: int = 12
 
     # Observability
     langfuse_public_key: str = ""

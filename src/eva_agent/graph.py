@@ -42,6 +42,15 @@ def _route_after_supervisor(state: AgentState) -> str:
     return _INTENT_ROUTE.get(kind, "refuse")
 
 
+def _route_after_data_gather(state: AgentState) -> str:
+    """Если планировщик запросил уточнение, завершаем ход через clarify."""
+    if state.todo_plan is not None and state.todo_plan.status == "awaiting_clarification":
+        return "clarify"
+    if state.intent is not None and state.intent.kind == "need_clarification":
+        return "clarify"
+    return "interface_agent"
+
+
 def _route_after_critic(state: AgentState) -> str:
     """Loop-policy: accept -> finalize; rework и бюджет цикла не исчерпан -> target; иначе finalize."""
     verdict = state.critic
@@ -81,7 +90,11 @@ def build_graph() -> CompiledStateGraph:
             "refuse": "refuse",
         },
     )
-    graph.add_edge("data_gather", "interface_agent")
+    graph.add_conditional_edges(
+        "data_gather",
+        _route_after_data_gather,
+        {"interface_agent": "interface_agent", "clarify": "clarify"},
+    )
     graph.add_edge("legal_agent", "critic")
     graph.add_edge("interface_agent", "critic")
     graph.add_conditional_edges(

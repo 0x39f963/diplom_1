@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from eva_agent.domain.plan import TodoPlan
 from eva_agent.security.verdict import GuardVerdict
 
 IntentKind = Literal[
@@ -78,6 +79,8 @@ class AgentState(BaseModel):
     intent: Intent | None = None
     retrieved: dict[str, RetrievalResult] = Field(default_factory=dict)   # "legal"/"howto"
     api_findings: list[ApiFinding] = Field(default_factory=list)
+    todo_plan: TodoPlan | None = None
+    plan_attempts: int = 0
     drafts: dict[str, str] = Field(default_factory=dict)                  # ответы агентов
     critic: CriticVerdict | None = None
 

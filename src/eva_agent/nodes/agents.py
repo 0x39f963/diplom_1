@@ -5,17 +5,30 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from eva_agent.domain.plan import TodoPlan
 from eva_agent.llm.config import get_client
+from eva_agent.planner.build import build_plan
+from eva_agent.planner.execute import execute_plan
+from eva_agent.planner.trace import trace_plan
 from eva_agent.security.spotlight import SPOTLIGHT_INSTRUCTION, spotlight
-from eva_agent.state import AgentState, CriticVerdict, Intent
-from eva_agent.tools.entity_ref import extract_refs
+from eva_agent.state import AgentState, ApiFinding, CriticVerdict, Intent
 from eva_agent.tools.retrieve import retrieve_howto, retrieve_legal
-from eva_agent.tools.selector import run_selected_tools, select_tools
 
 _INTENT_KINDS = {
     "legal_consult", "interface_consult", "mixed_diagnostic", "need_clarification", "out_of_scope",
 }
 _ROUTE_TARGETS = {"legal_agent", "interface_agent", "data_gather"}
+MAX_PLAN_REBUILDS = 1
+_REBUILD_HINTS = (
+    "rebuild",
+    "replan",
+    "missing step",
+    "missing todo",
+    "перестро",
+    "переплан",
+    "не хватает шага",
+    "не хватает todo",
+)
 
 
 def _safe_json(text: str) -> dict:
@@ -116,15 +129,80 @@ def interface_agent(state: AgentState) -> dict:
 
 
 def data_gather(state: AgentState) -> dict:
-    """Диагностика (read-only): выбрать инструменты по запросу и найденным сущностям."""
+    """Диагностика (read-only): построить todo-план, исполнить его и собрать findings."""
     query = state.user_input_clean or state.user_input_raw
-    refs = extract_refs(query)
-    intent_parts = [query]
-    if state.intent is not None:
-        intent_parts.extend([state.intent.kind, state.intent.rationale, " ".join(state.intent.needed_inputs)])
-    selected = select_tools(" ".join(part for part in intent_parts if part), refs)
-    findings = run_selected_tools(selected, refs, query)
-    return {"api_findings": state.api_findings + findings}
+    plan, plan_attempts, source, rebuild_reason = _plan_for_state(state, query)
+
+    current_findings: list[ApiFinding] = []
+    all_findings = state.api_findings
+    if plan.status != "awaiting_clarification":
+        if source == "reuse" and state.api_findings:
+            current_findings = state.api_findings
+        else:
+            current_findings, plan = execute_plan(plan)
+            all_findings = state.api_findings + current_findings
+
+    trace_plan(
+        plan,
+        current_findings,
+        plan_reused=source == "reuse",
+        plan_attempts=plan_attempts,
+        rebuild_reason=rebuild_reason,
+    )
+
+    if plan.status == "awaiting_clarification":
+        return {
+            "intent": _clarification_intent(state, plan),
+            "todo_plan": plan,
+            "plan_attempts": plan_attempts,
+        }
+    return {"api_findings": all_findings, "todo_plan": plan, "plan_attempts": plan_attempts}
+
+
+def _plan_for_state(state: AgentState, query: str) -> tuple[TodoPlan, int, str, str]:
+    if state.todo_plan is None:
+        return build_plan(query, prior_meaning=_prior_meaning(state)), state.plan_attempts, "build", ""
+
+    reason = _explicit_rebuild_reason(state)
+    if not reason or state.plan_attempts >= MAX_PLAN_REBUILDS:
+        return state.todo_plan.model_copy(deep=True), state.plan_attempts, "reuse", ""
+    return (
+        build_plan(query, prior_meaning=_prior_meaning(state)),
+        state.plan_attempts + 1,
+        "rebuild" if reason else "build",
+        reason,
+    )
+
+
+def _explicit_rebuild_reason(state: AgentState) -> str:
+    if state.todo_plan is None or state.critic is None or state.critic.target != "data_gather":
+        return ""
+    reason = state.critic.reason.strip()
+    lowered = reason.lower()
+    if any(hint in lowered for hint in _REBUILD_HINTS):
+        return reason[:200]
+    return ""
+
+
+def _prior_meaning(state: AgentState) -> str:
+    memory = getattr(state, "memory", None)
+    if memory is None:
+        return ""
+    for attr in ("accumulated_meaning", "merged_context"):
+        value = getattr(memory, attr, "")
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
+
+
+def _clarification_intent(state: AgentState, plan: TodoPlan) -> Intent:
+    question = plan.clarify_question or "Уточните, по какой сущности нужны данные."
+    return Intent(
+        kind="need_clarification",
+        confidence=state.intent.confidence if state.intent else 0.0,
+        rationale=state.intent.rationale if state.intent else "",
+        needed_inputs=[question],
+    )
 
 
 _CRITIC_SYS = (

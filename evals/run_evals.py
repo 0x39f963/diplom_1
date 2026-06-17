@@ -116,6 +116,30 @@ def _todo_status(state: dict[str, Any]) -> str | None:
     return str(value) if value is not None else None
 
 
+def _plan_capture(state: dict[str, Any]) -> dict[str, Any] | None:
+    """Снимок решения планировщика для аудита: протокол, статус, уверенность, todo с блокерами."""
+    plan = state.get("todo_plan")
+    if plan is None:
+        return None
+    items = [
+        {
+            "id": it.id,
+            "type": it.type,
+            "status": it.status,
+            "blockers": list(it.blockers),
+            "tools": [s.tool for s in it.tool_calls],
+        }
+        for it in getattr(plan, "items", [])
+    ]
+    return {
+        "protocol_id": getattr(plan, "protocol_id", None),
+        "status": getattr(plan, "status", None),
+        "confidence": getattr(plan, "confidence", None),
+        "clarify_question": getattr(plan, "clarify_question", ""),
+        "items": items,
+    }
+
+
 def _is_clarification(state: dict[str, Any]) -> bool:
     return _intent_kind(state) == "need_clarification" or _todo_status(state) == "awaiting_clarification"
 
@@ -322,6 +346,7 @@ def main() -> int:
                 ],
                 "judge_ok": judge_value,
                 "tool_ok": tool_value,
+                "plan": _plan_capture(state),
             }
         )
         print(f"  [{'OK' if ok else 'XX'}] {case['id']:24} lat={latency:5.1f}s cost=${cost:.5f}")

@@ -30,6 +30,23 @@ def test_select_protocol_typical_phrases() -> None:
         assert select_protocol(query, has_entity=has_entity, intent_kind=intent_kind) == expected
 
 
+def test_mixed_diagnostic_does_not_force_strict_protocol() -> None:
+    # mixed_diagnostic - это запрос данных: data-протокол, а не строгий mixed_legal_data.
+    assert (
+        select_protocol("какие договоры еще не оформлены", has_entity=False, intent_kind="mixed_diagnostic")
+        == "overview"
+    )
+    assert (
+        select_protocol("кто заказчик по договору CT-1", has_entity=True, intent_kind="mixed_diagnostic")
+        == "party_lookup"
+    )
+    # строгий протокол - только при реальном пересечении нормы и данных.
+    assert (
+        select_protocol("можно ли по закону выпустить креатив CR-1", has_entity=True, intent_kind="mixed_diagnostic")
+        == "mixed_legal_data"
+    )
+
+
 def test_render_protocol_is_not_empty() -> None:
     for protocol_id in PROTOCOLS:
         text = render_protocol(protocol_id)

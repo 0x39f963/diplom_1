@@ -157,7 +157,7 @@ def select_protocol(
 
     legal = _has(text, _LEGAL_HINTS) or intent_kind == "legal_consult"
     mixed_intent = intent_kind == "mixed_diagnostic"
-    has_data_signal = has_entity or _has(
+    has_data_signal = has_entity or mixed_intent or _has(
         text,
         _PARTY_HINTS
         + _CREATIVE_STATUS_HINTS
@@ -168,7 +168,9 @@ def select_protocol(
         + _OVERVIEW_HINTS,
     )
 
-    if mixed_intent or (legal and has_data_signal and has_entity):
+    # mixed_diagnostic - это запрос данных, ему нужен data-протокол (overview/party_lookup/...),
+    # а не строгий mixed_legal_data. Строгий берем только при реальном пересечении нормы и данных.
+    if legal and has_data_signal and has_entity:
         return "mixed_legal_data"
     if legal:
         return "legal_only"

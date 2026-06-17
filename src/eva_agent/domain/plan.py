@@ -86,6 +86,7 @@ class TodoPlan(BaseModel):
     status: DialogStatus = "in_progress"
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     clarify_question: str = ""
+    trace: list[str] = Field(default_factory=list)
 
     @property
     def is_empty(self) -> bool:

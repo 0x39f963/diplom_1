@@ -6,6 +6,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from eva_agent.domain.plan import TodoItem, TodoPlan
+from eva_agent.planner.bind import BindReport, bind_plan
 from eva_agent.planner.catalog import AVAILABLE_TOOLS_DEFAULT, CATALOG, TodoSpec, todo_is_available
 from eva_agent.planner.protocols import PROTOCOLS
 from eva_agent.tools.selector import EXECUTION_REGISTRY
@@ -17,7 +18,9 @@ _INTERNAL_TODOS = frozenset({"parse_goal", "summarize_answer", "clarify"})
 def validate_plan(plan: TodoPlan) -> TodoPlan:
     """Validate a planner plan without raising on model mistakes."""
 
+    bind_report = bind_plan(plan)
     violations: list[str] = []
+    _validate_bind_report(plan, bind_report, violations)
     _validate_todos(plan, violations)
     _validate_step_order(plan, violations)
     _validate_from_refs(plan, violations)
@@ -33,6 +36,22 @@ def validate_plan(plan: TodoPlan) -> TodoPlan:
     if violations:
         _await_clarification(plan, violations)
     return plan
+
+
+def _validate_bind_report(
+    plan: TodoPlan,
+    report: BindReport,
+    violations: list[str],
+) -> None:
+    by_id = {todo.id: todo for todo in plan.items}
+    for issue in report.ambiguous:
+        todo = by_id.get(issue.target_todo)
+        if todo is None:
+            continue
+        todo.status = "blocked"
+        blocker = f"ambiguous auto-wire: {issue.target_arg}"
+        _add_blocker(todo, blocker)
+        violations.append(blocker)
 
 
 def _validate_todos(plan: TodoPlan, violations: list[str]) -> None:
@@ -84,8 +103,23 @@ def _validate_step_order(plan: TodoPlan, violations: list[str]) -> None:
 
 def _validate_from_refs(plan: TodoPlan, violations: list[str]) -> None:
     existing = {step.order for todo in plan.items for step in todo.tool_calls}
+    todos = {todo.id: todo for todo in plan.items}
     for todo in plan.items:
         for step in todo.tool_calls:
+            for ref_todo in _iter_from_todos(step.args):
+                producer = todos.get(ref_todo)
+                if producer is None:
+                    todo.status = "blocked"
+                    _add_blocker(todo, f"unknown $from todo: {ref_todo}")
+                    violations.append(f"unknown $from todo: {ref_todo}")
+                elif producer.order >= todo.order and producer.order not in todo.depends_on:
+                    todo.status = "blocked"
+                    _add_blocker(todo, f"forward $from todo: {ref_todo}")
+                    violations.append(f"forward $from todo: {ref_todo}")
+                    legacy_step = _single_step_order(producer)
+                    if legacy_step is not None:
+                        _add_blocker(todo, f"forward $from step: {legacy_step}")
+                        violations.append(f"forward $from step: {legacy_step}")
             for ref_step in _iter_from_steps(step.args):
                 if ref_step not in existing:
                     todo.status = "blocked"
@@ -166,6 +200,27 @@ def _iter_from_steps(value: Any) -> Iterable[int]:
     elif isinstance(value, list):
         for child in value:
             yield from _iter_from_steps(child)
+
+
+def _iter_from_todos(value: Any) -> Iterable[str]:
+    if isinstance(value, Mapping):
+        ref = value.get("$from")
+        if isinstance(ref, Mapping):
+            todo = ref.get("todo")
+            if isinstance(todo, str):
+                yield todo
+        for child in value.values():
+            yield from _iter_from_todos(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _iter_from_todos(child)
+
+
+def _single_step_order(todo: TodoItem) -> int | None:
+    orders = {step.order for step in todo.tool_calls}
+    if len(orders) != 1:
+        return None
+    return next(iter(orders))
 
 
 def _has_required_input(todo: TodoItem, name: str) -> bool:

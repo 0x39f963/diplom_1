@@ -6,6 +6,7 @@ from typing import Any
 from eva_agent.domain.plan import PlanStep, TodoItem, TodoPlan
 from eva_agent.llm.base import LLMResponse
 from eva_agent.planner import build as planner_build
+from eva_agent.planner.execute import execute_plan
 
 
 class _FakeClient:
@@ -127,6 +128,65 @@ def test_build_plan_low_confidence_awaits_clarification(monkeypatch: Any) -> Non
 
     assert plan.status == "awaiting_clarification"
     assert plan.confidence < planner_build.PLANNER_MIN_CONFIDENCE
+
+
+def test_build_plan_remaps_legacy_from_before_step_renumber(monkeypatch: Any) -> None:
+    payload = {
+        "goal": "покажи договор креатива CR-1",
+        "protocol_id": "contract_card",
+        "strategy": "получить креатив и договор",
+        "items": [
+            {
+                "id": "get_creative_status",
+                "type": "blocking",
+                "order": 1,
+                "inputs": {"creative_id": "CR-1"},
+                "tool_calls": [
+                    {
+                        "order": 10,
+                        "tool": "eva_get_creative_status",
+                        "args": {"creative_id": "CR-1"},
+                        "date_hint": "none",
+                        "status_hint": "none",
+                        "reason": "получить креатив",
+                    }
+                ],
+            },
+            {
+                "id": "get_contract",
+                "type": "dependent",
+                "order": 2,
+                "depends_on": [1],
+                "inputs": {},
+                "tool_calls": [
+                    {
+                        "order": 20,
+                        "tool": "eva_get_contract",
+                        "args": {"contract_id": {"$from": {"step": 10, "path": "contract_id"}}},
+                        "date_hint": "none",
+                        "status_hint": "none",
+                        "reason": "получить договор",
+                    }
+                ],
+            },
+        ],
+        "status": "in_progress",
+        "confidence": 0.9,
+        "clarify_question": "",
+    }
+    _patch_client(monkeypatch, json.dumps(payload, ensure_ascii=False))
+
+    plan = planner_build.build_plan("покажи договор креатива CR-1")
+    findings, executed = execute_plan(plan)
+
+    assert plan.items[1].tool_calls[0].args["contract_id"] == {
+        "$from": {"todo": "get_creative_status", "path": "contract_id"}
+    }
+    assert [finding.tool for finding in findings] == [
+        "eva_get_creative_status",
+        "eva_get_contract",
+    ]
+    assert executed.status == "answered"
 
 
 def test_replan_resolved_input_unblocks_target_todo() -> None:

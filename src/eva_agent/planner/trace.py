@@ -41,6 +41,7 @@ def trace_plan(
             for todo in plan.ordered()
         ],
         "findings_tools": [finding.tool for finding in findings],
+        "trace": list(plan.trace),
         "clarify_question": plan.clarify_question,
         "plan_reused": plan_reused,
         "plan_attempts": plan_attempts,

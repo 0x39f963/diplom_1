@@ -10,6 +10,16 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from eva_agent.planner.protocols import (
+    _CONTRACT_CARD_HINTS,
+    _COUNTERPARTY_HINTS,
+    _CREATIVE_STATUS_HINTS,
+    _DOCUMENT_HINTS,
+    _OVERVIEW_HINTS,
+    _PARTY_HINTS,
+    _PLACEMENT_HINTS,
+)
+
 _CONTRACT_SYN = re.compile(r"\bCT-(\d+)\b", re.IGNORECASE)
 _CREATIVE_SYN = re.compile(r"\bCR-(\d+)\b", re.IGNORECASE)
 _COUNTERPARTY_SYN = re.compile(r"\bCP-(\d+)\b", re.IGNORECASE)
@@ -25,6 +35,15 @@ _COUNTERPARTY_ORG_QUOTED = re.compile(
 _COUNTERPARTY_PHRASE_QUOTED = re.compile(
     rf"\bконтрагент\w*\s+(?:(?P<form>{_ORG_FORM})\s*)?[«\"'](?P<name>[^»\"']+)[»\"']",
     re.IGNORECASE,
+)
+_DOMAIN_HINTS = (
+    _PARTY_HINTS
+    + _CREATIVE_STATUS_HINTS
+    + _PLACEMENT_HINTS
+    + _DOCUMENT_HINTS
+    + _CONTRACT_CARD_HINTS
+    + _COUNTERPARTY_HINTS
+    + _OVERVIEW_HINTS
 )
 
 
@@ -118,6 +137,15 @@ def extract_refs(text: str | None) -> EntityRefs:
         contract_numbers=_dedupe(contract_numbers),
         counterparty_hints=_dedupe(counterparty_hints),
     )
+
+
+def has_domain_signal(query: str) -> bool:
+    """Есть ли в запросе хотя бы слабый сигнал системных данных."""
+    refs = extract_refs(query)
+    if refs.has_any:
+        return True
+    text = query.lower()
+    return any(hint in text for hint in _DOMAIN_HINTS)
 
 
 @lru_cache(maxsize=1)

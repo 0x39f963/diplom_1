@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from eva_agent.tools.entity_ref import extract_refs, resolve_contract_ref
+from eva_agent.tools.entity_ref import extract_refs, has_domain_signal, resolve_contract_ref
 
 
 def test_extract_refs_all_synthetic_ids_and_contract_number() -> None:
@@ -25,6 +25,12 @@ def test_extract_refs_counterparty_hints_from_quotes() -> None:
     refs = extract_refs('Контрагент ООО "Площадка" и АО «Медиа» требуют проверки.')
 
     assert refs.counterparty_hints == ["ООО Площадка", "АО Медиа"]
+
+
+def test_has_domain_signal_from_id_or_keyword() -> None:
+    assert has_domain_signal("Проверь договор CT-1.")
+    assert has_domain_signal("Покажи список незакрытых договоров.")
+    assert not has_domain_signal("Как сварить кофе?")
 
 
 def test_resolve_contract_ref_supports_synthetic_numeric_and_number() -> None:

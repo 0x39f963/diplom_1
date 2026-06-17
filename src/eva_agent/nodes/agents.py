@@ -8,11 +8,13 @@ from typing import Any
 from eva_agent.domain.checklist import EntityCount, PlanningChecklist
 from eva_agent.domain.plan import TodoPlan
 from eva_agent.llm.config import get_client
+from eva_agent.llm.observability import langfuse_enabled
 from eva_agent.planner.build import build_plan, replan
 from eva_agent.planner.execute import execute_plan
 from eva_agent.planner.trace import trace_plan
 from eva_agent.security.spotlight import SPOTLIGHT_INSTRUCTION, spotlight
 from eva_agent.state import AgentState, ApiFinding, CriticVerdict, Intent
+from eva_agent.tools.entity_ref import has_domain_signal
 from eva_agent.tools.retrieve import retrieve_howto, retrieve_legal
 
 _INTENT_KINDS = {
@@ -85,7 +87,43 @@ def supervisor(state: AgentState) -> dict:
         rationale=str(data.get("rationale", "")),
         needed_inputs=_str_list(data.get("needed_inputs")),
     )
+    intent = _apply_high_recall_override(query, intent)
     return {"intent": intent}
+
+
+def _apply_high_recall_override(query: str, intent: Intent) -> Intent:
+    if intent.kind not in {"need_clarification", "out_of_scope"} or not has_domain_signal(query):
+        return intent
+    original_kind = intent.kind
+    rationale = intent.rationale.strip()
+    marker = f"high-recall override: {original_kind}->mixed_diagnostic"
+    intent = intent.model_copy(
+        update={
+            "kind": "mixed_diagnostic",
+            "rationale": f"{rationale}; {marker}" if rationale else marker,
+        }
+    )
+    _trace_supervisor_override(original_kind, intent.kind)
+    return intent
+
+
+def _trace_supervisor_override(original_kind: str, final_kind: str) -> None:
+    if not langfuse_enabled():
+        return
+    try:
+        from langfuse import get_client as get_langfuse_client
+
+        get_langfuse_client().update_current_span(
+            metadata={
+                "supervisor": {
+                    "high_recall_override": True,
+                    "original_kind": original_kind,
+                    "final_kind": final_kind,
+                }
+            }
+        )
+    except Exception:
+        return
 
 
 _LEGAL_SYS = (

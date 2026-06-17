@@ -44,6 +44,7 @@ _TOOL_ENTITIES: dict[str, set[str]] = {
     "eva_doc_download": {"document"},
     "eva_doc_attach": {"document", "contract"},
 }
+_GOLD_ROUTES = {"data", "legal", "clarify"}
 
 
 def load_cases() -> list[dict[str, Any]]:
@@ -144,6 +145,17 @@ def _is_clarification(state: dict[str, Any]) -> bool:
     return _intent_kind(state) == "need_clarification" or _todo_status(state) == "awaiting_clarification"
 
 
+def _actual_route(state: dict[str, Any]) -> str:
+    if _is_clarification(state):
+        return "clarify"
+    intent = _intent_kind(state)
+    if intent == "mixed_diagnostic":
+        return "data"
+    if intent == "legal_consult":
+        return "legal"
+    return intent or "unknown"
+
+
 def _assert_must_clarify(assertion: dict[str, Any]) -> bool:
     if assertion["type"] != "must_clarify":
         return False
@@ -154,6 +166,58 @@ def case_must_clarify(case: dict[str, Any]) -> bool:
     if bool(case.get("must_clarify")):
         return True
     return any(_assert_must_clarify(assertion) for assertion in case.get("asserts", []))
+
+
+def case_clarify_warranted(case: dict[str, Any]) -> bool:
+    value = case.get("clarify_warranted")
+    if isinstance(value, bool):
+        return value
+    return case_must_clarify(case)
+
+
+def _gold_route(case: dict[str, Any]) -> str | None:
+    value = case.get("gold_route")
+    return value if isinstance(value, str) and value in _GOLD_ROUTES else None
+
+
+def _rate(numerator: int, denominator: int) -> float:
+    return numerator / denominator if denominator else 0.0
+
+
+def compute_quality_metrics(
+    evaluated: list[tuple[dict[str, Any], dict[str, Any]]],
+) -> dict[str, int | float]:
+    route_total = route_ok = 0
+    clarify_total = warranted_total = warranted_clarified = 0
+    avoidable_clarifications = 0
+
+    for case, state in evaluated:
+        actual_route = _actual_route(state)
+        expected_route = _gold_route(case)
+        if expected_route is not None:
+            route_total += 1
+            route_ok += int(actual_route == expected_route)
+
+        clarified = _is_clarification(state)
+        warranted = case_clarify_warranted(case)
+        clarify_total += int(clarified)
+        warranted_total += int(warranted)
+        warranted_clarified += int(clarified and warranted)
+        avoidable_clarifications += int(clarified and not warranted)
+
+    total = len(evaluated)
+    return {
+        "route_ok": route_ok,
+        "route_total": route_total,
+        "route_accuracy": _rate(route_ok, route_total),
+        "clarify_total": clarify_total,
+        "clarify_warranted_total": warranted_total,
+        "clarify_warranted_hit": warranted_clarified,
+        "clarify_precision": _rate(warranted_clarified, clarify_total),
+        "clarify_recall": _rate(warranted_clarified, warranted_total),
+        "avoidable_clarifications": avoidable_clarifications,
+        "avoidable_clarification_rate": _rate(avoidable_clarifications, total),
+    }
 
 
 def known_fail_reason(case: dict[str, Any]) -> str | None:
@@ -252,6 +316,7 @@ def main() -> int:
     known_fail_runs = known_fail_pass = 0
     unexpected_fail = 0
     rows: list[dict[str, Any]] = []
+    evaluated: list[tuple[dict[str, Any], dict[str, Any]]] = []
 
     for case in cases:
         metrics.start_run()
@@ -318,6 +383,10 @@ def main() -> int:
 
         guard_in = state.get("guard_in")
         got_tools = _got_tools(state)
+        actual_route = _actual_route(state)
+        gold_route = _gold_route(case)
+        clarify_warranted = case_clarify_warranted(case)
+        evaluated.append((case, state))
         entities_ok = [
             check_assert(assertion, state)
             for assertion in assertions
@@ -331,7 +400,10 @@ def main() -> int:
                 "ok": ok,
                 "blocked": guard_in is not None and guard_in.decision == "block",
                 "must_clarify": case_must_clarify(case),
+                "clarify_warranted": clarify_warranted,
                 "clarification_ok": clarification_ok,
+                "gold_route": gold_route,
+                "actual_route": actual_route,
                 "known_fail": known_reason,
                 "latency_sec": round(latency, 3),
                 "cost_usd": cost,
@@ -357,6 +429,7 @@ def main() -> int:
     ordered = sorted(latencies)
     p95 = ordered[min(n - 1, int(0.95 * n))] if n else 0.0
     p50 = statistics.median(latencies) if latencies else 0.0
+    quality = compute_quality_metrics(evaluated)
     print("\n- EVAL -")
     print(f"  success-rate (кейсы):       {case_pass}/{n} = {case_pass / n:.0%}")
     print(f"  1) assert pass:             {assert_pass}/{assert_total}")
@@ -367,6 +440,25 @@ def main() -> int:
     print("- МЕТРИКИ -")
     print(f"  latency p50={p50:.1f}s  p95={p95:.1f}s")
     print(f"  cost/run avg=${statistics.mean(costs):.5f}  total=${sum(costs):.4f}")
+    print(
+        "  route_accuracy:            "
+        f"{quality['route_ok']}/{quality['route_total']} = {quality['route_accuracy']:.0%}"
+    )
+    print(
+        "  clarify_precision:         "
+        f"{quality['clarify_warranted_hit']}/{quality['clarify_total']} = "
+        f"{quality['clarify_precision']:.0%}"
+    )
+    print(
+        "  clarify_recall:            "
+        f"{quality['clarify_warranted_hit']}/{quality['clarify_warranted_total']} = "
+        f"{quality['clarify_recall']:.0%}"
+    )
+    print(
+        "  avoidable clarification:   "
+        f"{quality['avoidable_clarifications']}/{n} = "
+        f"{quality['avoidable_clarification_rate']:.0%}"
+    )
 
     out_path = os.environ.get("EVAL_OUT")
     if out_path:
@@ -400,6 +492,7 @@ def main() -> int:
                 "latency_total_sec": round(sum(latencies), 3),
                 "cost_avg_usd": statistics.mean(costs) if costs else 0.0,
                 "cost_total_usd": sum(costs),
+                **quality,
             },
             "cases": rows,
         }

@@ -10,9 +10,11 @@ from eva_agent.domain.plan import TodoPlan
 from eva_agent.llm.config import get_client
 from eva_agent.llm.observability import langfuse_enabled
 from eva_agent.planner.build import build_plan, replan
+from eva_agent.planner.compile import compile_plan
 from eva_agent.planner.execute import execute_plan
 from eva_agent.planner.trace import trace_plan
 from eva_agent.security.spotlight import SPOTLIGHT_INSTRUCTION, spotlight
+from eva_agent.settings import settings
 from eva_agent.state import AgentState, ApiFinding, CriticVerdict, Intent
 from eva_agent.tools.entity_ref import has_domain_signal
 from eva_agent.tools.retrieve import retrieve_howto, retrieve_legal
@@ -215,6 +217,13 @@ def data_gather(state: AgentState) -> dict:
 
 def _plan_for_state(state: AgentState, query: str) -> tuple[TodoPlan, int, str, str]:
     memory = getattr(state, "memory", None)
+    if state.todo_plan is None and _use_protocol_compiler(state) and state.frame is not None:
+        return (
+            compile_plan(state.frame, domain_slice=state.domain_slice),
+            state.plan_attempts,
+            "compile",
+            "",
+        )
     if (
         state.todo_plan is None
         and memory is not None
@@ -244,6 +253,13 @@ def _plan_for_state(state: AgentState, query: str) -> tuple[TodoPlan, int, str, 
     reason = _explicit_rebuild_reason(state)
     if not reason or state.plan_attempts >= MAX_PLAN_REBUILDS:
         return state.todo_plan.model_copy(deep=True), state.plan_attempts, "reuse", ""
+    if _use_protocol_compiler(state) and state.frame is not None:
+        return (
+            compile_plan(state.frame, domain_slice=state.domain_slice),
+            state.plan_attempts + 1,
+            "compile_rebuild",
+            reason,
+        )
     return (
         build_plan(
             query,
@@ -255,6 +271,10 @@ def _plan_for_state(state: AgentState, query: str) -> tuple[TodoPlan, int, str, 
         "rebuild" if reason else "build",
         reason,
     )
+
+
+def _use_protocol_compiler(state: AgentState) -> bool:
+    return settings.planner_use_protocol_compiler and state.frame is not None
 
 
 _FINDING_TOOL_ENTITY = {

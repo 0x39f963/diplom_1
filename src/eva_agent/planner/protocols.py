@@ -30,6 +30,21 @@ class ProtocolSpec(BaseModel):
     done_when: str = ""
 
 
+class ProtocolCard(BaseModel):
+    """Machine-readable protocol rule for deterministic compilation."""
+
+    id: str
+    operation: str
+    target: str
+    relation: str | None = None
+    protocol_id: ProtocolId
+    required_slots: list[str] = Field(default_factory=list)
+    preconditions: list[str] = Field(default_factory=list)
+    emits: list[str] = Field(default_factory=list)
+    todo_template: list[str] = Field(default_factory=list)
+    priority: int = 0
+
+
 PROTOCOLS: dict[ProtocolId, ProtocolSpec] = {
     "legal_only": ProtocolSpec(
         id="legal_only",
@@ -108,6 +123,179 @@ PROTOCOLS: dict[ProtocolId, ProtocolSpec] = {
         done_when="пользователю задан конкретный уточняющий вопрос",
     ),
 }
+
+PROTOCOL_CARDS: tuple[ProtocolCard, ...] = (
+    ProtocolCard(
+        id="party_lookup_role",
+        operation="read",
+        target="ContractParty",
+        relation="parties",
+        protocol_id="party_lookup",
+        required_slots=["contract_id"],
+        preconditions=["contract_id is known"],
+        emits=["parties", "counterparty"],
+        todo_template=["parse_goal", "resolve_party_role", "get_counterparty", "summarize_answer"],
+        priority=40,
+    ),
+    ProtocolCard(
+        id="party_lookup_all",
+        operation="list",
+        target="ContractParty",
+        relation="parties",
+        protocol_id="party_lookup",
+        required_slots=["contract_id"],
+        preconditions=["contract_id is known"],
+        emits=["parties", "counterparties"],
+        todo_template=["parse_goal", "resolve_party_role", "get_counterparty", "summarize_answer"],
+        priority=35,
+    ),
+    ProtocolCard(
+        id="contract_card",
+        operation="read",
+        target="Contract",
+        protocol_id="contract_card",
+        required_slots=["contract_id"],
+        preconditions=["contract_id is known"],
+        emits=["contract"],
+        todo_template=["parse_goal", "get_contract", "summarize_answer"],
+        priority=20,
+    ),
+    ProtocolCard(
+        id="contract_from_creative",
+        operation="read",
+        target="Contract",
+        relation="creative",
+        protocol_id="contract_card",
+        required_slots=["creative_id"],
+        preconditions=["creative_id is known"],
+        emits=["creative", "contract"],
+        todo_template=["parse_goal", "get_creative_status", "get_contract", "summarize_answer"],
+        priority=30,
+    ),
+    ProtocolCard(
+        id="creative_status",
+        operation="read",
+        target="Creative",
+        protocol_id="creative_status",
+        required_slots=["creative_id"],
+        preconditions=["creative_id is known"],
+        emits=["creative"],
+        todo_template=["parse_goal", "get_creative_status", "summarize_answer"],
+        priority=20,
+    ),
+    ProtocolCard(
+        id="creative_diagnose",
+        operation="diagnose",
+        target="Creative",
+        protocol_id="creative_status",
+        required_slots=["creative_id"],
+        preconditions=["creative_id is known"],
+        emits=["creative"],
+        todo_template=["parse_goal", "get_creative_status", "summarize_answer"],
+        priority=25,
+    ),
+    ProtocolCard(
+        id="creatives_by_contract",
+        operation="list",
+        target="Creative",
+        relation="placements",
+        protocol_id="placement_list",
+        required_slots=["contract_id"],
+        preconditions=["contract_id is known"],
+        emits=["placements", "creatives"],
+        todo_template=["parse_goal", "list_placements", "summarize_answer"],
+        priority=45,
+    ),
+    ProtocolCard(
+        id="placement_list",
+        operation="list",
+        target="Placement",
+        relation="placements",
+        protocol_id="placement_list",
+        required_slots=["contract_id"],
+        preconditions=["contract_id is known"],
+        emits=["placements"],
+        todo_template=["parse_goal", "list_placements", "summarize_answer"],
+        priority=35,
+    ),
+    ProtocolCard(
+        id="document_list",
+        operation="list",
+        target="Document",
+        relation="documents",
+        protocol_id="document_list",
+        required_slots=["contract_id"],
+        preconditions=["contract_id is known"],
+        emits=["documents"],
+        todo_template=["parse_goal", "list_documents", "summarize_answer"],
+        priority=30,
+    ),
+    ProtocolCard(
+        id="missing_documents",
+        operation="diagnose",
+        target="Document",
+        relation="documents",
+        protocol_id="document_list",
+        required_slots=["contract_id"],
+        preconditions=["contract_id is known"],
+        emits=["documents", "missing"],
+        todo_template=["parse_goal", "list_documents", "check_missing_documents", "summarize_answer"],
+        priority=35,
+    ),
+    ProtocolCard(
+        id="read_document",
+        operation="open",
+        target="Document",
+        protocol_id="document_list",
+        required_slots=["contract_id", "doc_id"],
+        preconditions=["contract_id and doc_id are known"],
+        emits=["document"],
+        todo_template=["parse_goal", "list_documents", "read_document", "summarize_answer"],
+        priority=25,
+    ),
+    ProtocolCard(
+        id="download_document",
+        operation="download",
+        target="Document",
+        protocol_id="document_list",
+        required_slots=["contract_id", "doc_id"],
+        preconditions=["contract_id and doc_id are known"],
+        emits=["download_link"],
+        todo_template=["parse_goal", "list_documents", "download_document", "summarize_answer"],
+        priority=25,
+    ),
+    ProtocolCard(
+        id="counterparty_card",
+        operation="read",
+        target="Counterparty",
+        protocol_id="counterparty_card",
+        required_slots=["counterparty_id"],
+        preconditions=["counterparty_id is known"],
+        emits=["counterparty"],
+        todo_template=["parse_goal", "get_counterparty", "summarize_answer"],
+        priority=20,
+    ),
+    ProtocolCard(
+        id="unsigned_overview",
+        operation="list",
+        target="Contract",
+        protocol_id="overview",
+        preconditions=["status filter is unsigned or no exact entity is selected"],
+        emits=["contracts"],
+        todo_template=["parse_goal", "build_overview", "summarize_answer"],
+        priority=10,
+    ),
+    ProtocolCard(
+        id="readiness_overview",
+        operation="diagnose",
+        target="Contract",
+        protocol_id="overview",
+        preconditions=["overview is requested"],
+        emits=["contracts", "readiness"],
+        todo_template=["parse_goal", "build_overview", "summarize_answer"],
+        priority=10,
+    ),
+)
 
 _LEGAL_HINTS = (
     "закон",

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from eva_agent.planner.catalog import CATALOG
-from eva_agent.planner.protocols import PROTOCOLS, render_protocol, select_protocol
+from eva_agent.planner.protocols import PROTOCOL_CARDS, PROTOCOLS, render_protocol, select_protocol
 
 
 def test_protocol_todo_ids_exist_in_catalog() -> None:
@@ -9,6 +9,11 @@ def test_protocol_todo_ids_exist_in_catalog() -> None:
 
     for spec in PROTOCOLS.values():
         for todo_id in spec.mandatory + spec.optional:
+            assert todo_id in catalog_ids
+
+    for card in PROTOCOL_CARDS:
+        assert card.protocol_id in PROTOCOLS
+        for todo_id in card.todo_template:
             assert todo_id in catalog_ids
 
 

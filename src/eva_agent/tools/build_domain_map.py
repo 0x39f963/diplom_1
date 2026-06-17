@@ -57,6 +57,9 @@ def build_domain_map() -> dict[str, Any]:
             "description": entity.description,
             "fields": list(entity.key_fields),
             "endpoints": list(entity.endpoints),
+            "operations": list(entity.operations),
+            "statuses": list(entity.statuses),
+            "roles": list(entity.roles),
             "tools": _tools_for_entity(entity),
         }
 
@@ -118,8 +121,14 @@ def render_domain_slice(entities: list[str], domain_map: dict[str, Any] | None =
     for entity_name in selected:
         entity = all_entities[entity_name]
         fields = ",".join(cast(list[str], entity["fields"]))
+        operations = ",".join(cast(list[str], entity.get("operations", []))) or "-"
+        roles = ",".join(cast(list[str], entity.get("roles", []))) or "-"
+        statuses = ",".join(cast(list[str], entity.get("statuses", []))) or "-"
         tools = ",".join(cast(list[str], entity["tools"]))
-        lines.append(f"{entity_name}: f {fields}; tools {tools}.")
+        lines.append(
+            f"{entity_name}: f {fields}; ops {operations}; roles {roles}; "
+            f"statuses {statuses}; tools {tools}."
+        )
 
     relation_text = []
     for relation in _slice_relations(selected, domain_map):

@@ -87,6 +87,7 @@ class Settings(BaseSettings):
 
     # Граф
     max_loops: int = Field(default=2, ge=0, le=5)
+    planner_use_protocol_compiler: bool = True
 
     def role_backend(self, role: Role) -> Backend:
         return getattr(self, f"llm_backend_{role}")

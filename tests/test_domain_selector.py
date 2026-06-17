@@ -5,11 +5,12 @@ from typing import Any
 
 import eva_agent.nodes.agents as agents_module
 import eva_agent.nodes.domain_nodes as domain_nodes
+import eva_agent.nodes.frame_parser as frame_parser_module
 import eva_agent.nodes.guards as guards_module
 from eva_agent.graph import build_graph
 from eva_agent.llm.base import LLMResponse
-from eva_agent.planner import build as planner_build
 from eva_agent.security.verdict import GuardVerdict
+from eva_agent.settings import settings
 from eva_agent.state import AgentState, Intent, RetrievalResult
 
 
@@ -25,6 +26,7 @@ class _StaticClient:
         *,
         temperature: float | None = None,
         json_mode: bool = False,
+        schema: dict[str, Any] | None = None,
     ) -> LLMResponse:
         self.calls.append(
             {
@@ -32,6 +34,7 @@ class _StaticClient:
                 "user": user,
                 "temperature": temperature,
                 "json_mode": json_mode,
+                "schema": schema,
             }
         )
         return LLMResponse(text=self.text, model="fake", backend="fake")
@@ -45,7 +48,9 @@ class _AgentClient:
         *,
         temperature: float | None = None,
         json_mode: bool = False,
+        schema: dict[str, Any] | None = None,
     ) -> LLMResponse:
+        del schema
         if "оркестратор" in system:
             payload = {
                 "kind": "mixed_diagnostic",
@@ -137,35 +142,24 @@ def test_supervisor_prompt_keeps_data_question_as_mixed(monkeypatch: Any) -> Non
     assert "какой статус договора CT-1" in client.calls[0]["system"]
 
 
-def test_graph_mixed_route_runs_domain_selector_before_data_gather(monkeypatch: Any) -> None:
-    planner_payload = {
-        "goal": "кто заказчик по договору CT-1",
-        "protocol_id": "party_lookup",
-        "strategy": "получить стороны договора",
-        "items": [
-            {
-                "id": "resolve_party_role",
-                "type": "blocking",
-                "order": 1,
-                "inputs": {"contract_id": "CT-1", "role": "customer"},
-                "tool_calls": [
-                    {
-                        "order": 1,
-                        "tool": "eva_get_contract_parties",
-                        "args": {"contract_id": "CT-1"},
-                        "date_hint": "none",
-                        "status_hint": "none",
-                        "reason": "получить стороны",
-                    }
-                ],
-            }
-        ],
-        "status": "in_progress",
+def test_graph_mixed_route_runs_frame_parser_compiler_and_data_gather(monkeypatch: Any) -> None:
+    monkeypatch.setattr(settings, "planner_use_protocol_compiler", True)
+    frame_payload = {
+        "operation": "read",
+        "target": "ContractParty",
+        "relation": "parties",
+        "fields": [],
+        "filters": {"date_hint": "none", "status": []},
+        "cardinality": "one",
+        "selector": {"contract_id": "CT-1", "role": "customer"},
+        "output": "card",
+        "subtasks": [],
+        "needs_clarification": False,
+        "clarify_reason": "",
         "confidence": 0.9,
-        "clarify_question": "",
     }
     domain_client = _StaticClient('{"entities":["Contract","ContractParty","Counterparty"]}')
-    planner_client = _StaticClient(json.dumps(planner_payload, ensure_ascii=False))
+    frame_client = _StaticClient(json.dumps(frame_payload, ensure_ascii=False))
 
     def fake_detect_injection(user_input: str, untrusted_data: str = "") -> GuardVerdict:
         assert user_input
@@ -180,9 +174,9 @@ def test_graph_mixed_route_runs_domain_selector_before_data_gather(monkeypatch: 
         assert role == "domain"
         return domain_client
 
-    def fake_planner_get_client(role: str) -> _StaticClient:
-        assert role == "planner"
-        return planner_client
+    def fake_frame_get_client(role: str) -> _StaticClient:
+        assert role == "domain"
+        return frame_client
 
     def fake_retrieve_howto(query: str) -> RetrievalResult:
         return RetrievalResult(query=query, collection="howto", chunks=[])
@@ -190,14 +184,20 @@ def test_graph_mixed_route_runs_domain_selector_before_data_gather(monkeypatch: 
     monkeypatch.setattr(guards_module, "detect_injection", fake_detect_injection)
     monkeypatch.setattr(agents_module, "get_client", fake_agent_get_client)
     monkeypatch.setattr(domain_nodes, "get_client", fake_domain_get_client)
-    monkeypatch.setattr(planner_build, "get_client", fake_planner_get_client)
+    monkeypatch.setattr(frame_parser_module, "get_client", fake_frame_get_client)
+    monkeypatch.setattr(frame_parser_module, "retrieve_examples", lambda query, k=5: [])
     monkeypatch.setattr(agents_module, "retrieve_howto", fake_retrieve_howto)
 
     result = build_graph().invoke({"user_input_raw": "кто заказчик по договору CT-1"})
 
     assert result["intent"].kind == "mixed_diagnostic"
-    assert result["domain_slice"].entities == ["Contract", "ContractParty", "Counterparty"]
+    assert result["frame"].target == "ContractParty"
+    assert result["domain_slice"].entities == ["ContractParty", "Contract", "Counterparty"]
     assert result["checklist"].resolution == "proceed"
+    assert result["todo_plan"].strategy.startswith("compiled:")
     assert result["todo_plan"].status == "answered"
-    assert [finding.tool for finding in result["api_findings"]] == ["eva_get_contract_parties"]
-    assert "ContractParty:" in planner_client.calls[0]["system"]
+    assert [finding.tool for finding in result["api_findings"]] == [
+        "eva_get_contract_parties",
+        "eva_get_counterparty",
+    ]
+    assert frame_client.calls[0]["schema"]["$defs"]["PlanningFrame"]["properties"]["target"]["type"] == "string"

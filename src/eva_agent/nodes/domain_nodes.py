@@ -31,10 +31,11 @@ def domain_selector(state: AgentState) -> dict:
     entities = cast(dict[str, dict[str, Any]], domain_map.get("entities", {}))
     refs = extract_refs(query)
 
+    frame_selected = _select_from_frame(state.frame, all_entities=list(entities))
     llm_selected = _select_with_llm(query, intent_kind, entities)
     fallback_selected = _select_from_refs(refs, all_entities=list(entities))
     nlu_selected = state.nlu.entities if state.nlu is not None else []
-    selected = _unique([*llm_selected, *fallback_selected, *nlu_selected])
+    selected = _unique([*frame_selected, *llm_selected, *fallback_selected, *nlu_selected])
     if not selected:
         selected = list(entities)
 
@@ -44,15 +45,24 @@ def domain_selector(state: AgentState) -> dict:
             "scope": "mixed_diagnostic",
         }
     )
+    intent_counts = _intent_counts(state.checklist)
+    resolution = "clarify" if state.frame is not None and state.frame.needs_clarification else "proceed"
+    clarify_reason = state.frame.clarify_reason if state.frame is not None else ""
     checklist = PlanningChecklist(
         intent=intent_kind,
         entities=domain_slice.entities,
         cardinality=[
-            EntityCount(entity=entity, ref_count=_ref_count(entity, refs))
+            EntityCount(
+                entity=entity,
+                intent_count=intent_counts.get(entity),
+                ref_count=_ref_count(entity, refs),
+            )
             for entity in domain_slice.entities
         ],
         access=domain_slice.tools,
-        resolution="proceed",
+        needs_chain=state.checklist.needs_chain if state.checklist is not None else False,
+        resolution=resolution,
+        clarify_reason=clarify_reason,
     )
     return {"domain_slice": domain_slice, "checklist": checklist}
 
@@ -130,6 +140,44 @@ def _select_from_refs(refs: EntityRefs, *, all_entities: list[str]) -> list[str]
     if refs.document_ids:
         selected.append("Document")
     return [entity for entity in selected if entity in all_entities]
+
+
+def _select_from_frame(frame: Any | None, *, all_entities: list[str]) -> list[str]:
+    if frame is None:
+        return []
+    selected: list[str] = []
+    _append_if_known(selected, frame.target, all_entities)
+    if frame.relation == "parties":
+        for entity in ("Contract", "ContractParty", "Counterparty"):
+            _append_if_known(selected, entity, all_entities)
+    elif frame.relation == "placements":
+        for entity in ("Contract", "Placement", "Creative"):
+            _append_if_known(selected, entity, all_entities)
+    elif frame.relation == "documents":
+        for entity in ("Contract", "Document"):
+            _append_if_known(selected, entity, all_entities)
+    elif frame.relation == "creative":
+        for entity in ("Creative", "Contract"):
+            _append_if_known(selected, entity, all_entities)
+    for subtask in frame.subtasks:
+        for entity in _select_from_frame(subtask, all_entities=all_entities):
+            _append_if_known(selected, entity, all_entities)
+    return selected
+
+
+def _append_if_known(out: list[str], entity: str, all_entities: list[str]) -> None:
+    if entity in all_entities and entity not in out:
+        out.append(entity)
+
+
+def _intent_counts(checklist: PlanningChecklist | None) -> dict[str, int]:
+    if checklist is None:
+        return {}
+    return {
+        count.entity: count.intent_count
+        for count in checklist.cardinality
+        if count.intent_count is not None
+    }
 
 
 def _ref_count(entity: str, refs: EntityRefs) -> int:

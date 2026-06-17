@@ -21,6 +21,19 @@
         "chain_role",
         "ord_status"
       ],
+      "operations": [
+        "read",
+        "list",
+        "diagnose"
+      ],
+      "roles": [],
+      "statuses": [
+        "draft",
+        "pending",
+        "sent",
+        "registered",
+        "unsigned"
+      ],
       "tools": [
         "eva_list_unsigned_contracts",
         "eva_search_contracts",
@@ -39,6 +52,20 @@
         "role",
         "ord_status"
       ],
+      "operations": [
+        "read",
+        "list"
+      ],
+      "roles": [
+        "customer",
+        "executor"
+      ],
+      "statuses": [
+        "draft",
+        "pending",
+        "registered",
+        "unsigned"
+      ],
       "tools": [
         "eva_get_contract_parties"
       ]
@@ -54,6 +81,17 @@
         "inn",
         "legal_type",
         "ord_registration_status"
+      ],
+      "operations": [
+        "read",
+        "list",
+        "diagnose"
+      ],
+      "roles": [],
+      "statuses": [
+        "registered",
+        "unregistered",
+        "draft"
       ],
       "tools": [
         "eva_get_counterparty"
@@ -72,6 +110,19 @@
         "erid_token",
         "contract_id"
       ],
+      "operations": [
+        "read",
+        "list",
+        "compare",
+        "diagnose"
+      ],
+      "roles": [],
+      "statuses": [
+        "draft",
+        "pending_contract",
+        "registered",
+        "blocked"
+      ],
       "tools": [
         "eva_get_creative_status"
       ]
@@ -89,6 +140,13 @@
         "size",
         "url"
       ],
+      "operations": [
+        "read",
+        "list",
+        "download"
+      ],
+      "roles": [],
+      "statuses": [],
       "tools": [
         "eva_get_creative_status"
       ]
@@ -107,6 +165,19 @@
         "file_name",
         "status",
         "url"
+      ],
+      "operations": [
+        "read",
+        "list",
+        "open",
+        "download",
+        "attach"
+      ],
+      "roles": [],
+      "statuses": [
+        "attached",
+        "missing",
+        "draft"
       ],
       "tools": [
         "eva_list_contract_documents",
@@ -127,6 +198,18 @@
         "status",
         "period",
         "platform"
+      ],
+      "operations": [
+        "read",
+        "list",
+        "diagnose"
+      ],
+      "roles": [],
+      "statuses": [
+        "planned",
+        "active",
+        "done",
+        "cancelled"
       ],
       "tools": [
         "eva_list_placements"

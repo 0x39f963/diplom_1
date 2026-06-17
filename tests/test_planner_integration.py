@@ -5,12 +5,14 @@ from typing import Any
 
 import eva_agent.nodes.agents as agents_module
 from eva_agent.domain.checklist import EntityCount, PlanningChecklist
+from eva_agent.domain.frame import PlanningFrame
 from eva_agent.domain.plan import PlanStep, TodoItem, TodoPlan
 from eva_agent.domain.slice import DomainSlice
 from eva_agent.graph import _route_after_data_gather
 from eva_agent.llm.base import LLMResponse
 from eva_agent.planner import build as planner_build
 from eva_agent.planner.trace import trace_plan
+from eva_agent.settings import settings
 from eva_agent.state import AgentState, ApiFinding, CriticVerdict, Intent
 
 
@@ -267,6 +269,84 @@ def test_data_gather_passes_slice_relations_to_executor(monkeypatch: Any) -> Non
     assert captured["intent_kind"] == "mixed_diagnostic"
     assert captured["relations"] == domain_slice.relations
     assert result["todo_plan"].status == "answered"
+
+
+def test_data_gather_uses_compiler_when_frame_present(monkeypatch: Any) -> None:
+    monkeypatch.setattr(settings, "planner_use_protocol_compiler", True)
+    calls = 0
+
+    def fail_build_plan(
+        query: str,
+        *,
+        prior_meaning: str = "",
+        domain_slice: DomainSlice | None = None,
+        intent_kind: str | None = None,
+    ) -> TodoPlan:
+        nonlocal calls
+        calls += 1
+        raise AssertionError((query, prior_meaning, domain_slice, intent_kind))
+
+    monkeypatch.setattr(agents_module, "build_plan", fail_build_plan)
+    state = AgentState(
+        user_input_raw="кто заказчик по договору CT-1",
+        intent=Intent(kind="mixed_diagnostic", confidence=0.9),
+        frame=PlanningFrame(
+            operation="read",
+            target="ContractParty",
+            relation="parties",
+            selector={"contract_id": "CT-1", "role": "customer"},
+            output="card",
+            confidence=0.9,
+        ),
+    )
+
+    result = agents_module.data_gather(state)
+
+    assert calls == 0
+    assert result["todo_plan"].strategy.startswith("compiled:")
+    assert result["todo_plan"].status == "answered"
+    assert [finding.tool for finding in result["api_findings"]] == [
+        "eva_get_contract_parties",
+        "eva_get_counterparty",
+    ]
+
+
+def test_data_gather_legacy_flag_uses_build_plan(monkeypatch: Any) -> None:
+    monkeypatch.setattr(settings, "planner_use_protocol_compiler", False)
+    calls = 0
+
+    def fake_build_plan(
+        query: str,
+        *,
+        prior_meaning: str = "",
+        domain_slice: DomainSlice | None = None,
+        intent_kind: str | None = None,
+    ) -> TodoPlan:
+        nonlocal calls
+        calls += 1
+        assert query == "кто заказчик по договору CT-1"
+        assert intent_kind == "mixed_diagnostic"
+        return _executable_plan()
+
+    monkeypatch.setattr(agents_module, "build_plan", fake_build_plan)
+    state = AgentState(
+        user_input_raw="кто заказчик по договору CT-1",
+        intent=Intent(kind="mixed_diagnostic", confidence=0.9),
+        frame=PlanningFrame(
+            operation="read",
+            target="ContractParty",
+            relation="parties",
+            selector={"contract_id": "CT-1", "role": "customer"},
+            output="card",
+            confidence=0.9,
+        ),
+    )
+
+    result = agents_module.data_gather(state)
+
+    assert calls == 1
+    assert result["todo_plan"].strategy == "получить стороны договора"
+    assert [finding.tool for finding in result["api_findings"]] == ["eva_get_contract_parties"]
 
 
 def test_trace_plan_payload_contains_audit_fields() -> None:

@@ -27,6 +27,9 @@ class EntitySpec:
     key_fields: tuple[str, ...]
     relations: tuple[str, ...]
     endpoints: tuple[str, ...]
+    operations: tuple[str, ...] = ()
+    statuses: tuple[str, ...] = ()
+    roles: tuple[str, ...] = ()
 
 
 ENTITY_MAP: tuple[EntitySpec, ...] = (
@@ -36,6 +39,8 @@ ENTITY_MAP: tuple[EntitySpec, ...] = (
         key_fields=("id", "contract_number", "contract_date", "contract_type", "chain_role", "ord_status"),
         relations=("parties/creatives/placements/docs по contract_id",),
         endpoints=("GET /api/contracts", "GET /api/contracts/{id}"),
+        operations=("read", "list", "diagnose"),
+        statuses=("draft", "pending", "sent", "registered", "unsigned"),
     ),
     EntitySpec(
         name="ContractParty",
@@ -43,6 +48,9 @@ ENTITY_MAP: tuple[EntitySpec, ...] = (
         key_fields=("id", "contract_id", "counterparty_id", "role", "ord_status"),
         relations=("role customer/executor -> Counterparty",),
         endpoints=("GET /api/contracts/{id}/parties",),
+        operations=("read", "list"),
+        statuses=("draft", "pending", "registered", "unsigned"),
+        roles=("customer", "executor"),
     ),
     EntitySpec(
         name="Counterparty",
@@ -50,6 +58,8 @@ ENTITY_MAP: tuple[EntitySpec, ...] = (
         key_fields=("id", "name", "inn", "legal_type", "ord_registration_status"),
         relations=("ContractParty; dedup counterparty_id",),
         endpoints=("GET /api/counterparties/{id}",),
+        operations=("read", "list", "diagnose"),
+        statuses=("registered", "unregistered", "draft"),
     ),
     EntitySpec(
         name="Creative",
@@ -57,6 +67,8 @@ ENTITY_MAP: tuple[EntitySpec, ...] = (
         key_fields=("id", "title", "distribution_form", "ord_status", "erid_token", "contract_id"),
         relations=("Contract, CreativeMedia, Placement",),
         endpoints=("GET /api/creatives/{id}",),
+        operations=("read", "list", "compare", "diagnose"),
+        statuses=("draft", "pending_contract", "registered", "blocked"),
     ),
     EntitySpec(
         name="CreativeMedia",
@@ -64,6 +76,7 @@ ENTITY_MAP: tuple[EntitySpec, ...] = (
         key_fields=("id", "creative_id", "file_name", "mime_type", "size", "url"),
         relations=("Creative -> media/doc",),
         endpoints=("GET /api/creatives/{id}/media",),
+        operations=("read", "list", "download"),
     ),
     EntitySpec(
         name="Placement",
@@ -71,6 +84,8 @@ ENTITY_MAP: tuple[EntitySpec, ...] = (
         key_fields=("id", "contract_id", "creative_id", "status", "period", "platform"),
         relations=("Contract -> Placement -> Creative",),
         endpoints=("GET /api/contracts/{id}/placements", "GET /api/placements?contract_id="),
+        operations=("read", "list", "diagnose"),
+        statuses=("planned", "active", "done", "cancelled"),
     ),
     EntitySpec(
         name="Document",
@@ -78,6 +93,8 @@ ENTITY_MAP: tuple[EntitySpec, ...] = (
         key_fields=("id", "entity_type", "entity_id", "doc_type", "file_name", "status", "url"),
         relations=("Contract/Creative -> Document; missing",),
         endpoints=("GET /api/contracts/{id}/documents", "POST /api/contracts/{id}/documents"),
+        operations=("read", "list", "open", "download", "attach"),
+        statuses=("attached", "missing", "draft"),
     ),
 )
 

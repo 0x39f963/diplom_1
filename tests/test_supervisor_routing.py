@@ -54,7 +54,7 @@ def test_supervisor_overrides_clarification_for_domain_signal(monkeypatch: Any) 
     assert "high-recall override" in result["intent"].rationale
     assert _route_after_supervisor(
         AgentState(user_input_raw="x", intent=result["intent"])
-    ) == "domain_selector"
+    ) == "intent_frame_parser"
 
 
 def test_supervisor_keeps_out_of_scope_without_domain_signal(monkeypatch: Any) -> None:

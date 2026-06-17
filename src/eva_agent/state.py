@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from eva_agent.dialog.models import MemoryDecision
 from eva_agent.domain.checklist import PlanningChecklist
+from eva_agent.domain.frame import PlanningFrame
 from eva_agent.domain.plan import TodoPlan
 from eva_agent.domain.slice import DomainSlice
 from eva_agent.nlu.preprocess import NluFeatures
@@ -84,6 +85,7 @@ class AgentState(BaseModel):
     guard_out: GuardVerdict | None = None
 
     intent: Intent | None = None
+    frame: PlanningFrame | None = None
     domain_slice: DomainSlice | None = None
     checklist: PlanningChecklist | None = None
     retrieved: dict[str, RetrievalResult] = Field(default_factory=dict)   # "legal"/"howto"

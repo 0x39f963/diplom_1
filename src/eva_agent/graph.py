@@ -21,6 +21,7 @@ from eva_agent.nodes.agents import (
 )
 from eva_agent.nodes.dialog_nodes import load_context, save_turn
 from eva_agent.nodes.domain_nodes import domain_selector
+from eva_agent.nodes.frame_parser import intent_frame_parser
 from eva_agent.nodes.guards import input_guard, output_guard
 from eva_agent.nodes.nlu import nlu_preprocessor
 from eva_agent.settings import settings
@@ -30,7 +31,7 @@ from eva_agent.tracing import traced_node
 _INTENT_ROUTE = {
     "legal_consult": "legal_agent",
     "interface_consult": "interface_agent",
-    "mixed_diagnostic": "domain_selector",
+    "mixed_diagnostic": "intent_frame_parser",
     "need_clarification": "clarify",
     "out_of_scope": "refuse",
 }
@@ -73,6 +74,7 @@ def build_graph() -> CompiledStateGraph:
     graph.add_node("supervisor", traced_node("supervisor", supervisor))
     graph.add_node("legal_agent", traced_node("legal_agent", legal_agent))
     graph.add_node("interface_agent", traced_node("interface_agent", interface_agent))
+    graph.add_node("intent_frame_parser", traced_node("intent_frame_parser", intent_frame_parser))
     graph.add_node("domain_selector", traced_node("domain_selector", domain_selector))
     graph.add_node("data_gather", traced_node("data_gather", data_gather))
     graph.add_node("critic", traced_node("critic", critic))
@@ -94,12 +96,14 @@ def build_graph() -> CompiledStateGraph:
         {
             "legal_agent": "legal_agent",
             "interface_agent": "interface_agent",
+            "intent_frame_parser": "intent_frame_parser",
             "domain_selector": "domain_selector",
             "data_gather": "data_gather",
             "clarify": "clarify",
             "refuse": "refuse",
         },
     )
+    graph.add_edge("intent_frame_parser", "domain_selector")
     graph.add_edge("domain_selector", "data_gather")
     graph.add_conditional_edges(
         "data_gather",

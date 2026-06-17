@@ -5,7 +5,7 @@ RAG_API := http://localhost:8077
 # Поиск по закону работает отдельным сервисом (адрес в RAG_API_BASE).
 # Подними его рядом перед cli/eval/ui: docker compose up -d && make api
 
-.PHONY: help install smoke cli eval bench validate-bench ui mcp lint type test gates
+.PHONY: help install smoke cli eval bench validate-bench ui mcp domain-map lint type test gates
 
 help: ## Список целей
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-8s\033[0m %s\n", $$1, $$2}'
@@ -22,6 +22,9 @@ cli: ## Агент в консоли: make cli Q="нужен ли ERID для б
 
 mcp: ## MCP-сервер документов по stdio
 	$(PY) -m eva_agent.mcp_docs.server
+
+domain-map: ## Regenerate domain_map.json from entity_map
+	$(PY) -m eva_agent.tools.build_domain_map
 
 eval: ## Бенчмарк + 3 типа eval + метрики (нужен поднятый retrieval API)
 	RAG_API_BASE=$(RAG_API) $(PY) -m evals.run_evals

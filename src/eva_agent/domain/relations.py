@@ -1,0 +1,43 @@
+"""Курируемые машинные связи учебного домена."""
+
+from __future__ import annotations
+
+from eva_agent.domain.slice import RelationSpec
+
+# На следующем этапе эту таблицу заменит генерация из OpenAPI-схемы.
+RELATIONS: tuple[RelationSpec, ...] = (
+    RelationSpec(
+        source_entity="ContractParty",
+        target_entity="Counterparty",
+        source_tool="eva_get_contract_parties",
+        source_path="parties[].counterparty_id",
+        target_tool="eva_get_counterparty",
+        target_arg="counterparty_id",
+        selector="role",
+        cardinality="many",
+    ),
+    RelationSpec(
+        source_entity="Creative",
+        target_entity="Contract",
+        source_tool="eva_get_creative_status",
+        source_path="contract_id",
+        target_tool="eva_get_contract",
+        target_arg="contract_id",
+    ),
+    RelationSpec(
+        source_entity="Contract",
+        target_entity="Placement",
+        source_tool="eva_get_contract",
+        source_path="id",
+        target_tool="eva_list_placements",
+        target_arg="contract_id",
+    ),
+    RelationSpec(
+        source_entity="Contract",
+        target_entity="Document",
+        source_tool="eva_get_contract",
+        source_path="id",
+        target_tool="eva_list_contract_documents",
+        target_arg="contract_id",
+    ),
+)

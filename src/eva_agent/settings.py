@@ -13,7 +13,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Backend = Literal["openrouter", "local", "claude_cli", "codex_cli"]
 Effort = Literal["low", "medium", "high"]
-Role = Literal["reasoning", "default", "guard", "planner", "memory"]
+Role = Literal["reasoning", "default", "guard", "planner", "memory", "domain"]
 MockMode = Literal["fixtures", "random"]
 
 
@@ -44,11 +44,14 @@ class Settings(BaseSettings):
     llm_model_planner: str = "qwen3.5:9b"
     llm_backend_memory: Backend = "local"
     llm_model_memory: str = "qwen3.5:9b"
+    llm_backend_domain: Backend = "local"
+    llm_model_domain: str = "qwen3.5:9b"
     llm_effort_reasoning: Effort = "medium"
     llm_effort_default: Effort = "medium"
     llm_effort_guard: Effort = "medium"
     llm_effort_planner: Effort = "medium"
     llm_effort_memory: Effort = "medium"
+    llm_effort_domain: Effort = "medium"
     llm_call_timeout_sec: int = 300
     llm_provider_max_retries: int = 2
 

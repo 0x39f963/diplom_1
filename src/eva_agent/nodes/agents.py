@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from eva_agent.domain.checklist import EntityCount, PlanningChecklist
 from eva_agent.domain.plan import TodoPlan
 from eva_agent.llm.config import get_client
 from eva_agent.planner.build import build_plan, replan
@@ -60,7 +61,11 @@ _SUPERVISOR_SYS = (
     '{"kind":"legal_consult|interface_consult|mixed_diagnostic|need_clarification|out_of_scope",'
     '"confidence":0..1,"rationale":"...","needed_inputs":[...]}. '
     "legal_consult - вопрос про нормы/закон; interface_consult - как сделать в кабинете; "
-    "mixed_diagnostic - нужно посмотреть состояние данных (договоры/креативы); "
+    "mixed_diagnostic - нужно посмотреть состояние данных системы: договоры, стороны, контрагенты, "
+    "креативы, размещения или документы. Любой такой запрос классифицируй как mixed_diagnostic, "
+    "даже если он сформулирован вопросом. Примеры: 'какой статус договора CT-1?' -> mixed_diagnostic; "
+    "'кто заказчик по договору CT-1?' -> mixed_diagnostic; "
+    "'почему креатив CR-1 не готов?' -> mixed_diagnostic. "
     "need_clarification - не хватает данных; out_of_scope - не по теме закона о рекламе."
 )
 
@@ -139,7 +144,10 @@ def data_gather(state: AgentState) -> dict:
         if source == "reuse" and state.api_findings:
             current_findings = state.api_findings
         else:
-            current_findings, plan = execute_plan(plan)
+            current_findings, plan = execute_plan(
+                plan,
+                relations=state.domain_slice.relations if state.domain_slice else None,
+            )
             all_findings = state.api_findings + current_findings
 
     trace_plan(
@@ -150,13 +158,21 @@ def data_gather(state: AgentState) -> dict:
         rebuild_reason=rebuild_reason,
     )
 
+    checklist = _update_checklist(state.checklist, plan, all_findings)
+
     if plan.status == "awaiting_clarification":
-        return {
+        result = {
             "intent": _clarification_intent(state, plan),
             "todo_plan": plan,
             "plan_attempts": plan_attempts,
         }
-    return {"api_findings": all_findings, "todo_plan": plan, "plan_attempts": plan_attempts}
+        if checklist is not None:
+            result["checklist"] = checklist
+        return result
+    result = {"api_findings": all_findings, "todo_plan": plan, "plan_attempts": plan_attempts}
+    if checklist is not None:
+        result["checklist"] = checklist
+    return result
 
 
 def _plan_for_state(state: AgentState, query: str) -> tuple[TodoPlan, int, str, str]:
@@ -175,17 +191,122 @@ def _plan_for_state(state: AgentState, query: str) -> tuple[TodoPlan, int, str, 
         )
 
     if state.todo_plan is None:
-        return build_plan(query, prior_meaning=_prior_meaning(state)), state.plan_attempts, "build", ""
+        return (
+            build_plan(
+                query,
+                prior_meaning=_prior_meaning(state),
+                domain_slice=state.domain_slice,
+                intent_kind=state.intent.kind if state.intent else None,
+            ),
+            state.plan_attempts,
+            "build",
+            "",
+        )
 
     reason = _explicit_rebuild_reason(state)
     if not reason or state.plan_attempts >= MAX_PLAN_REBUILDS:
         return state.todo_plan.model_copy(deep=True), state.plan_attempts, "reuse", ""
     return (
-        build_plan(query, prior_meaning=_prior_meaning(state)),
+        build_plan(
+            query,
+            prior_meaning=_prior_meaning(state),
+            domain_slice=state.domain_slice,
+            intent_kind=state.intent.kind if state.intent else None,
+        ),
         state.plan_attempts + 1,
         "rebuild" if reason else "build",
         reason,
     )
+
+
+_FINDING_TOOL_ENTITY = {
+    "eva_get_contract": "Contract",
+    "eva_search_contracts": "Contract",
+    "eva_list_unsigned_contracts": "Contract",
+    "eva_get_contract_parties": "ContractParty",
+    "eva_get_counterparty": "Counterparty",
+    "eva_get_creative_status": "Creative",
+    "eva_list_placements": "Placement",
+    "eva_list_contract_documents": "Document",
+    "eva_doc_read": "Document",
+    "eva_doc_download": "Document",
+}
+
+
+def _update_checklist(
+    checklist: PlanningChecklist | None,
+    plan: TodoPlan,
+    findings: list[ApiFinding],
+) -> PlanningChecklist | None:
+    if checklist is None:
+        return None
+    result_counts = _result_counts(findings)
+    seen: set[str] = set()
+    cardinality: list[EntityCount] = []
+    for count in checklist.cardinality:
+        seen.add(count.entity)
+        cardinality.append(
+            count.model_copy(update={"result_count": result_counts.get(count.entity, 0)})
+        )
+    for entity in checklist.entities:
+        if entity not in seen:
+            cardinality.append(EntityCount(entity=entity, result_count=result_counts.get(entity, 0)))
+
+    resolution = "clarify" if plan.status == "awaiting_clarification" else "proceed"
+    clarify_reason = _clarify_reason(plan) if resolution == "clarify" else ""
+    return checklist.model_copy(
+        update={
+            "cardinality": cardinality,
+            "needs_chain": checklist.needs_chain or _plan_needs_chain(plan),
+            "resolution": resolution,
+            "clarify_reason": clarify_reason,
+        }
+    )
+
+
+def _result_counts(findings: list[ApiFinding]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for finding in findings:
+        entity = _FINDING_TOOL_ENTITY.get(finding.tool)
+        if entity is None:
+            continue
+        counts[entity] = counts.get(entity, 0) + _finding_count(finding)
+    return counts
+
+
+def _finding_count(finding: ApiFinding) -> int:
+    for value in finding.data.values():
+        if isinstance(value, list):
+            return len(value)
+    return 1 if finding.data else 0
+
+
+def _plan_needs_chain(plan: TodoPlan) -> bool:
+    if any("auto-wire" in event for event in plan.trace):
+        return True
+    for todo in plan.items:
+        if todo.depends_on or _has_from_ref(todo.inputs):
+            return True
+        if any(_has_from_ref(step.args) for step in todo.tool_calls):
+            return True
+    return False
+
+
+def _has_from_ref(value: Any) -> bool:
+    if isinstance(value, dict):
+        if "$from" in value:
+            return True
+        return any(_has_from_ref(child) for child in value.values())
+    if isinstance(value, list):
+        return any(_has_from_ref(child) for child in value)
+    return False
+
+
+def _clarify_reason(plan: TodoPlan) -> str:
+    for todo in plan.ordered():
+        if todo.blockers:
+            return todo.blockers[0]
+    return plan.clarify_question
 
 
 def _explicit_rebuild_reason(state: AgentState) -> str:

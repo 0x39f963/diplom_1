@@ -10,10 +10,12 @@ from pydantic import ValidationError
 
 from eva_agent.domain.entity_map import render_entity_map
 from eva_agent.domain.plan import TodoItem, TodoPlan
+from eva_agent.domain.slice import DomainSlice
 from eva_agent.llm.config import get_client
 from eva_agent.planner.catalog import AVAILABLE_TOOLS_DEFAULT, CATALOG, render_catalog
 from eva_agent.planner.protocols import ProtocolId, render_protocol, select_protocol
 from eva_agent.planner.validate import PLANNER_MIN_CONFIDENCE, validate_plan
+from eva_agent.tools.build_domain_map import render_domain_slice
 from eva_agent.tools.entity_ref import EntityRefs, extract_refs
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
@@ -91,19 +93,36 @@ order todo начинается с 1. id строго из каталога. Е�
 задай clarify_question коротким вопросом."""
 
 
-def build_plan(query: str, *, prior_meaning: str = "") -> TodoPlan:
-    """Build a todo plan with one planner LLM call."""
+def build_plan(
+    query: str,
+    *,
+    prior_meaning: str = "",
+    domain_slice: DomainSlice | None = None,
+    intent_kind: str | None = None,
+) -> TodoPlan:
+    """Build a todo plan, with one retry if the parsed plan is empty."""
 
     refs = extract_refs(query)
-    protocol_id = select_protocol(query, has_entity=refs.has_any)
-    system = _build_system_prompt(protocol_id, query=query, refs=refs, prior_meaning=prior_meaning)
-    response = get_client("planner").invoke(
-        system,
-        "Построй JSON TodoPlan для цели из системного сообщения.",
-        temperature=0.0,
-        json_mode=True,
+    protocol_id = select_protocol(query, has_entity=refs.has_any, intent_kind=intent_kind)
+    system = _build_system_prompt(
+        protocol_id,
+        query=query,
+        refs=refs,
+        prior_meaning=prior_meaning,
+        domain_slice=domain_slice,
     )
-    plan = _parse_plan(response.text, protocol_id=protocol_id, query=query)
+    client = get_client("planner")
+    plan = _parse_plan(
+        _invoke_planner(client, system),
+        protocol_id=protocol_id,
+        query=query,
+    )
+    if plan.is_empty:
+        plan = _parse_plan(
+            _invoke_planner(client, system),
+            protocol_id=protocol_id,
+            query=query,
+        )
     _fill_missing_inputs(plan, refs=refs, query=query)
     return validate_plan(plan)
 
@@ -143,16 +162,32 @@ def _build_system_prompt(
     query: str,
     refs: EntityRefs,
     prior_meaning: str,
+    domain_slice: DomainSlice | None = None,
 ) -> str:
     prior = prior_meaning.strip() if prior_meaning.strip() else "-"
+    entity_map = (
+        render_domain_slice(domain_slice.entities)
+        if domain_slice is not None
+        else render_entity_map()
+    )
     return (
         _PLANNER_SYS.replace("{{GOAL}}", query)
         .replace("{{PRIOR_MEANING}}", prior)
         .replace("{{REFS}}", _render_refs(refs))
         .replace("{{PROTOCOL}}", render_protocol(protocol_id))
         .replace("{{CATALOG}}", render_catalog(AVAILABLE_TOOLS_DEFAULT))
-        .replace("{{ENTITY_MAP}}", render_entity_map())
+        .replace("{{ENTITY_MAP}}", entity_map)
     )
+
+
+def _invoke_planner(client: Any, system: str) -> str:
+    response = client.invoke(
+        system,
+        "Построй JSON TodoPlan для цели из системного сообщения.",
+        temperature=0.0,
+        json_mode=True,
+    )
+    return response.text
 
 
 _INTERNAL_TODOS = {"parse_goal", "clarify", "summarize_answer"}

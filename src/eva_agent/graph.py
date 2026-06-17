@@ -20,6 +20,7 @@ from eva_agent.nodes.agents import (
     supervisor,
 )
 from eva_agent.nodes.dialog_nodes import load_context, save_turn
+from eva_agent.nodes.domain_nodes import domain_selector
 from eva_agent.nodes.guards import input_guard, output_guard
 from eva_agent.settings import settings
 from eva_agent.state import AgentState
@@ -28,7 +29,7 @@ from eva_agent.tracing import traced_node
 _INTENT_ROUTE = {
     "legal_consult": "legal_agent",
     "interface_consult": "interface_agent",
-    "mixed_diagnostic": "data_gather",
+    "mixed_diagnostic": "domain_selector",
     "need_clarification": "clarify",
     "out_of_scope": "refuse",
 }
@@ -70,6 +71,7 @@ def build_graph() -> CompiledStateGraph:
     graph.add_node("supervisor", traced_node("supervisor", supervisor))
     graph.add_node("legal_agent", traced_node("legal_agent", legal_agent))
     graph.add_node("interface_agent", traced_node("interface_agent", interface_agent))
+    graph.add_node("domain_selector", traced_node("domain_selector", domain_selector))
     graph.add_node("data_gather", traced_node("data_gather", data_gather))
     graph.add_node("critic", traced_node("critic", critic))
     graph.add_node("finalize", traced_node("finalize", finalize))
@@ -89,11 +91,13 @@ def build_graph() -> CompiledStateGraph:
         {
             "legal_agent": "legal_agent",
             "interface_agent": "interface_agent",
+            "domain_selector": "domain_selector",
             "data_gather": "data_gather",
             "clarify": "clarify",
             "refuse": "refuse",
         },
     )
+    graph.add_edge("domain_selector", "data_gather")
     graph.add_conditional_edges(
         "data_gather",
         _route_after_data_gather,

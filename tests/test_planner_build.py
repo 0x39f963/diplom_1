@@ -10,8 +10,8 @@ from eva_agent.planner.execute import execute_plan
 
 
 class _FakeClient:
-    def __init__(self, text: str) -> None:
-        self.text = text
+    def __init__(self, text: str | list[str]) -> None:
+        self.texts = [text] if isinstance(text, str) else list(text)
         self.calls: list[dict[str, Any]] = []
 
     def invoke(
@@ -30,10 +30,11 @@ class _FakeClient:
                 "json_mode": json_mode,
             }
         )
-        return LLMResponse(text=self.text, model="fake", backend="fake")
+        index = min(len(self.calls) - 1, len(self.texts) - 1)
+        return LLMResponse(text=self.texts[index], model="fake", backend="fake")
 
 
-def _patch_client(monkeypatch: Any, text: str) -> _FakeClient:
+def _patch_client(monkeypatch: Any, text: str | list[str]) -> _FakeClient:
     client = _FakeClient(text)
 
     def fake_get_client(role: str) -> _FakeClient:
@@ -128,6 +129,100 @@ def test_build_plan_low_confidence_awaits_clarification(monkeypatch: Any) -> Non
 
     assert plan.status == "awaiting_clarification"
     assert plan.confidence < planner_build.PLANNER_MIN_CONFIDENCE
+
+
+def test_build_plan_uses_domain_slice_and_intent_kind(monkeypatch: Any) -> None:
+    from eva_agent.tools.build_domain_map import make_slice
+
+    payload = {
+        "goal": "покажи карточку договора CT-1",
+        "protocol_id": "contract_card",
+        "strategy": "получить договор",
+        "items": [
+            {
+                "id": "get_contract",
+                "type": "blocking",
+                "order": 1,
+                "inputs": {"contract_id": "CT-1"},
+                "tool_calls": [
+                    {
+                        "order": 1,
+                        "tool": "eva_get_contract",
+                        "args": {"contract_id": "CT-1"},
+                        "date_hint": "none",
+                        "status_hint": "none",
+                        "reason": "получить карточку",
+                    }
+                ],
+            }
+        ],
+        "status": "in_progress",
+        "confidence": 0.9,
+        "clarify_question": "",
+    }
+    captured: dict[str, Any] = {}
+
+    def fake_select_protocol(query: str, has_entity: bool, intent_kind: str | None = None) -> str:
+        captured["query"] = query
+        captured["has_entity"] = has_entity
+        captured["intent_kind"] = intent_kind
+        return "contract_card"
+
+    monkeypatch.setattr(planner_build, "select_protocol", fake_select_protocol)
+    client = _patch_client(monkeypatch, json.dumps(payload, ensure_ascii=False))
+
+    planner_build.build_plan(
+        "покажи карточку договора CT-1",
+        domain_slice=make_slice(["Contract"]),
+        intent_kind="mixed_diagnostic",
+    )
+
+    system = client.calls[0]["system"]
+    entity_map = system.split("КАРТА СУЩНОСТЕЙ И СВЯЗЕЙ", 1)[1].split("КАК СТРОИТЬ", 1)[0]
+    assert captured == {
+        "query": "покажи карточку договора CT-1",
+        "has_entity": True,
+        "intent_kind": "mixed_diagnostic",
+    }
+    assert "Contract:" in entity_map
+    assert "Counterparty:" not in entity_map
+    assert "Placement:" not in entity_map
+
+
+def test_build_plan_retries_once_when_first_plan_is_empty(monkeypatch: Any) -> None:
+    payload = {
+        "goal": "покажи карточку договора CT-1",
+        "protocol_id": "contract_card",
+        "strategy": "получить договор",
+        "items": [
+            {
+                "id": "get_contract",
+                "type": "blocking",
+                "order": 1,
+                "inputs": {"contract_id": "CT-1"},
+                "tool_calls": [
+                    {
+                        "order": 1,
+                        "tool": "eva_get_contract",
+                        "args": {"contract_id": "CT-1"},
+                        "date_hint": "none",
+                        "status_hint": "none",
+                        "reason": "получить карточку",
+                    }
+                ],
+            }
+        ],
+        "status": "in_progress",
+        "confidence": 0.9,
+        "clarify_question": "",
+    }
+    client = _patch_client(monkeypatch, ["{}", json.dumps(payload, ensure_ascii=False)])
+
+    plan = planner_build.build_plan("покажи карточку договора CT-1")
+
+    assert len(client.calls) == 2
+    assert plan.status == "in_progress"
+    assert plan.items[0].id == "get_contract"
 
 
 def test_build_plan_remaps_legacy_from_before_step_renumber(monkeypatch: Any) -> None:

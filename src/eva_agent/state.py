@@ -11,7 +11,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from eva_agent.dialog.models import MemoryDecision
+from eva_agent.domain.checklist import PlanningChecklist
 from eva_agent.domain.plan import TodoPlan
+from eva_agent.domain.slice import DomainSlice
 from eva_agent.security.verdict import GuardVerdict
 
 IntentKind = Literal[
@@ -80,6 +82,8 @@ class AgentState(BaseModel):
     guard_out: GuardVerdict | None = None
 
     intent: Intent | None = None
+    domain_slice: DomainSlice | None = None
+    checklist: PlanningChecklist | None = None
     retrieved: dict[str, RetrievalResult] = Field(default_factory=dict)   # "legal"/"howto"
     api_findings: list[ApiFinding] = Field(default_factory=list)
     todo_plan: TodoPlan | None = None

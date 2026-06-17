@@ -8,6 +8,7 @@ import pytest
 
 import eva_agent.dialog.memory_agent as memory_agent_module
 import eva_agent.nodes.agents as agents_module
+import eva_agent.nodes.domain_nodes as domain_nodes
 import eva_agent.nodes.guards as guards_module
 from eva_agent.dialog.models import DialogMeaning
 from eva_agent.dialog.store import DialogStore, get_store, reset_store
@@ -214,11 +215,19 @@ def test_multi_turn_continuation_replans_and_saves_history(
         assert role in {"reasoning", "default"}
         return _AgentClient()
 
-    def fake_build_plan(query: str, *, prior_meaning: str = "") -> TodoPlan:
+    def fake_build_plan(
+        query: str,
+        *,
+        prior_meaning: str = "",
+        domain_slice: Any | None = None,
+        intent_kind: str | None = None,
+    ) -> TodoPlan:
         nonlocal build_calls
         build_calls += 1
         assert query == "кто исполнитель в договоре?"
         assert prior_meaning == ""
+        assert domain_slice is not None
+        assert intent_kind == "mixed_diagnostic"
         return _blocked_party_plan()
 
     memory_payload = {
@@ -233,10 +242,17 @@ def test_multi_turn_continuation_replans_and_saves_history(
         assert role == "memory"
         return memory_client
 
+    domain_client = _StaticClient('{"entities":["Contract","ContractParty","Counterparty"]}')
+
+    def fake_get_domain_client(role: str) -> _StaticClient:
+        assert role == "domain"
+        return domain_client
+
     monkeypatch.setattr(guards_module, "detect_injection", fake_detect_injection)
     monkeypatch.setattr(agents_module, "get_client", fake_get_agent_client)
     monkeypatch.setattr(agents_module, "build_plan", fake_build_plan)
     monkeypatch.setattr(memory_agent_module, "get_client", fake_get_memory_client)
+    monkeypatch.setattr(domain_nodes, "get_client", fake_get_domain_client)
 
     graph = build_graph()
     sid = "multi-turn"
@@ -293,4 +309,3 @@ def test_no_session_id_is_noop(monkeypatch: pytest.MonkeyPatch) -> None:
 
     result = run_request(_Graph(), "запрос")
     assert result == {"user_input_raw": "запрос", "session_id": None}
-

@@ -25,6 +25,7 @@ chainlit.md
 .langfuse/
 *.log
 evals/out/
+.cursor/
 
 # os
 .DS_Store

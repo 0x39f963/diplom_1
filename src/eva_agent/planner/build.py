@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from pydantic import ValidationError
@@ -14,6 +15,15 @@ from eva_agent.planner.catalog import AVAILABLE_TOOLS_DEFAULT, CATALOG, render_c
 from eva_agent.planner.protocols import ProtocolId, render_protocol, select_protocol
 from eva_agent.planner.validate import PLANNER_MIN_CONFIDENCE, validate_plan
 from eva_agent.tools.entity_ref import EntityRefs, extract_refs
+
+_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
+
+
+def _strip_fences(text: str) -> str:
+    """Снять markdown-обертку вокруг JSON: некоторые модели отдают ```json ... ``` вместо чистого JSON."""
+    match = _FENCE_RE.match(text.strip())
+    return match.group(1) if match else text
+
 
 _PLANNER_SYS = """Ты - планировщик ИИ-помощника по работе с внутренней системой маркетингового агентства.
 Твоя задача: разобрать запрос пользователя и построить todo-лист - упорядоченный план решения цели.
@@ -193,7 +203,7 @@ def _normalize_depends_on(item: dict[str, Any], id_to_order: dict[str, int]) -> 
 def _parse_plan(text: str, *, protocol_id: ProtocolId, query: str) -> TodoPlan:
     empty = _fallback_plan(query=query, protocol_id=protocol_id)
     try:
-        raw = json.loads(text)
+        raw = json.loads(_strip_fences(text))
     except json.JSONDecodeError:
         return empty
     if not isinstance(raw, dict):

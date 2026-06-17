@@ -42,7 +42,9 @@ def test_execute_resolves_from_chain_to_counterparty() -> None:
                 type="dependent",
                 order=2,
                 depends_on=[1],
-                inputs={"counterparty_id": {"$from": {"step": 1, "path": "parties.0.counterparty_id"}}},
+                inputs={
+                    "counterparty_id": {"$from": {"step": 1, "path": "parties.0.counterparty_id"}}
+                },
                 tool_calls=[
                     PlanStep(
                         order=2,
@@ -150,7 +152,20 @@ def test_execute_selector_value_picks_one_counterparty() -> None:
     assert executed.status == "answered"
 
 
-def test_execute_fan_out_counterparties_without_selector_value() -> None:
+def test_execute_blocks_many_relation_without_selector_or_explicit_all(monkeypatch: Any) -> None:
+    counterparty_calls: list[str] = []
+
+    def fake_counterparty(counterparty_id: str) -> ApiFinding:
+        counterparty_calls.append(counterparty_id)
+        return ApiFinding(
+            tool="eva_get_counterparty",
+            args={"counterparty_id": counterparty_id},
+            data={"id": counterparty_id},
+        )
+
+    monkeypatch.setitem(
+        execute_module.EXECUTION_REGISTRY, "eva_get_counterparty", fake_counterparty
+    )
     plan = _plan(
         "counterparty_card",
         [
@@ -177,15 +192,171 @@ def test_execute_fan_out_counterparties_without_selector_value() -> None:
 
     findings, executed = execute_plan(plan)
 
+    assert [finding.tool for finding in findings] == ["eva_get_contract_parties"]
+    assert counterparty_calls == []
+    assert executed.items[1].status == "blocked"
+    assert executed.status == "awaiting_clarification"
+    assert any(
+        "needs selector or explicit all" in blocker for blocker in executed.items[1].blockers
+    )
+
+
+def test_execute_fan_out_counterparties_with_explicit_all() -> None:
+    plan = _plan(
+        "counterparty_card",
+        [
+            TodoItem(
+                id="get_contract_parties",
+                order=1,
+                inputs={"contract_id": "CT-1"},
+                tool_calls=[
+                    PlanStep(
+                        order=1,
+                        tool="eva_get_contract_parties",
+                        args={"contract_id": "CT-1"},
+                    )
+                ],
+            ),
+            TodoItem(
+                id="get_counterparty",
+                type="dependent",
+                order=2,
+                inputs={"fan_out": True},
+                tool_calls=[PlanStep(order=2, tool="eva_get_counterparty", args={})],
+            ),
+        ],
+    )
+
+    findings, executed = execute_plan(plan)
+
     counterparty_ids = [
         finding.args["counterparty_id"]
         for finding in findings
         if finding.tool == "eva_get_counterparty"
     ]
     assert counterparty_ids == ["CP-1", "CP-2"]
+    assert executed.items[1].tool_calls[0].args["counterparty_id"]["$from"]["fan_out"] is True
     assert executed.items[1].status == "done"
+    assert executed.status == "answered"
     assert "fan-out eva_get_counterparty.counterparty_id[1]" in executed.trace
     assert "fan-out eva_get_counterparty.counterparty_id[2]" in executed.trace
+
+
+def test_execute_uses_selector_value_from_producer_todo(monkeypatch: Any) -> None:
+    counterparty_calls: list[str] = []
+
+    def fake_counterparty(counterparty_id: str) -> ApiFinding:
+        counterparty_calls.append(counterparty_id)
+        return ApiFinding(
+            tool="eva_get_counterparty",
+            args={"counterparty_id": counterparty_id},
+            data={"id": counterparty_id},
+        )
+
+    monkeypatch.setitem(
+        execute_module.EXECUTION_REGISTRY, "eva_get_counterparty", fake_counterparty
+    )
+    plan = _plan(
+        "counterparty_card",
+        [
+            TodoItem(
+                id="resolve_party_role",
+                order=1,
+                inputs={"contract_id": "CT-1", "role": "customer"},
+                tool_calls=[
+                    PlanStep(
+                        order=1,
+                        tool="eva_get_contract_parties",
+                        args={"contract_id": "CT-1"},
+                    )
+                ],
+            ),
+            TodoItem(
+                id="get_counterparty",
+                type="dependent",
+                order=2,
+                tool_calls=[PlanStep(order=2, tool="eva_get_counterparty", args={})],
+            ),
+        ],
+    )
+
+    findings, executed = execute_plan(plan)
+
+    counterparty_findings = [
+        finding for finding in findings if finding.tool == "eva_get_counterparty"
+    ]
+    assert counterparty_calls == ["CP-1"]
+    assert len(counterparty_findings) == 1
+    assert counterparty_findings[0].args["counterparty_id"] == "CP-1"
+    assert executed.items[1].status == "done"
+    assert executed.status == "answered"
+
+
+def test_execute_capped_fan_out_blocks_after_partial_findings(monkeypatch: Any) -> None:
+    counterparty_calls: list[str] = []
+
+    def fake_parties(contract_id: str) -> ApiFinding:
+        return ApiFinding(
+            tool="eva_get_contract_parties",
+            args={"contract_id": contract_id},
+            data={
+                "id": contract_id,
+                "parties": [
+                    {"role": f"role-{index}", "counterparty_id": f"CP-{index:02d}"}
+                    for index in range(25)
+                ],
+            },
+        )
+
+    def fake_counterparty(counterparty_id: str) -> ApiFinding:
+        counterparty_calls.append(counterparty_id)
+        return ApiFinding(
+            tool="eva_get_counterparty",
+            args={"counterparty_id": counterparty_id},
+            data={"id": counterparty_id},
+        )
+
+    monkeypatch.setitem(execute_module.EXECUTION_REGISTRY, "eva_get_contract_parties", fake_parties)
+    monkeypatch.setitem(
+        execute_module.EXECUTION_REGISTRY, "eva_get_counterparty", fake_counterparty
+    )
+    plan = _plan(
+        "counterparty_card",
+        [
+            TodoItem(
+                id="get_contract_parties",
+                order=1,
+                inputs={"contract_id": "CT-big"},
+                tool_calls=[
+                    PlanStep(
+                        order=1,
+                        tool="eva_get_contract_parties",
+                        args={"contract_id": "CT-big"},
+                    )
+                ],
+            ),
+            TodoItem(
+                id="get_counterparty",
+                type="dependent",
+                order=2,
+                inputs={"fan_out": True},
+                tool_calls=[PlanStep(order=2, tool="eva_get_counterparty", args={})],
+            ),
+        ],
+    )
+
+    findings, executed = execute_plan(plan)
+
+    counterparty_findings = [
+        finding for finding in findings if finding.tool == "eva_get_counterparty"
+    ]
+    assert len(counterparty_calls) == 20
+    assert counterparty_calls == [f"CP-{index:02d}" for index in range(20)]
+    assert len(counterparty_findings) == 20
+    assert executed.items[1].status == "blocked"
+    assert executed.status == "awaiting_clarification"
+    assert "fan-out capped at 20 of 25" in executed.items[1].blockers
+    assert "fan-out capped at 20 of 25" in executed.trace
 
 
 def test_execute_blocks_empty_producer_without_calling_consumer(monkeypatch: Any) -> None:
@@ -207,7 +378,9 @@ def test_execute_blocks_empty_producer_without_calling_consumer(monkeypatch: Any
         )
 
     monkeypatch.setitem(execute_module.EXECUTION_REGISTRY, "eva_get_contract_parties", fake_parties)
-    monkeypatch.setitem(execute_module.EXECUTION_REGISTRY, "eva_get_counterparty", fake_counterparty)
+    monkeypatch.setitem(
+        execute_module.EXECUTION_REGISTRY, "eva_get_counterparty", fake_counterparty
+    )
     plan = _plan(
         "counterparty_card",
         [
@@ -227,6 +400,7 @@ def test_execute_blocks_empty_producer_without_calling_consumer(monkeypatch: Any
                 id="get_counterparty",
                 type="dependent",
                 order=2,
+                inputs={"fan_out": True},
                 tool_calls=[PlanStep(order=2, tool="eva_get_counterparty", args={})],
             ),
         ],
@@ -372,7 +546,9 @@ def test_validate_plan_dependency_cycle_awaits_clarification() -> None:
     validated = validate_plan(plan)
 
     assert validated.status == "awaiting_clarification"
-    assert any("dependency cycle" in blocker for item in validated.items for blocker in item.blockers)
+    assert any(
+        "dependency cycle" in blocker for item in validated.items for blocker in item.blockers
+    )
 
 
 def test_validate_plan_forward_from_awaits_clarification() -> None:
@@ -410,7 +586,9 @@ def test_validate_plan_forward_from_awaits_clarification() -> None:
     validated = validate_plan(plan)
 
     assert validated.status == "awaiting_clarification"
-    assert any("forward $from step" in blocker for item in validated.items for blocker in item.blockers)
+    assert any(
+        "forward $from step" in blocker for item in validated.items for blocker in item.blockers
+    )
 
 
 def test_validate_plan_todo_from_refs_are_strict() -> None:
@@ -443,7 +621,10 @@ def test_validate_plan_todo_from_refs_are_strict() -> None:
                         tool="eva_get_counterparty",
                         args={
                             "counterparty_id": {
-                                "$from": {"todo": "get_contract_parties", "path": "parties.0.counterparty_id"}
+                                "$from": {
+                                    "todo": "get_contract_parties",
+                                    "path": "parties.0.counterparty_id",
+                                }
                             }
                         },
                     )

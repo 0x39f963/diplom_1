@@ -115,7 +115,7 @@ def _execute_todo(
             _add_blocker(todo, f"unknown tool: {tool}")
             continue
         try:
-            args = _resolve_args(step.args, results, results_by_todo, todo)
+            args = _resolve_args(step.args, results, results_by_todo, todo, plan)
         except _UnresolvedRef as exc:
             _add_blocker(todo, str(exc))
             continue
@@ -124,7 +124,7 @@ def _execute_todo(
             continue
         args = apply_filters(step, args)
         if _has_fan_out(args):
-            todo_ok = _execute_fan_out(
+            fan_out_ok, fan_out_blocked = _execute_fan_out(
                 plan,
                 todo,
                 step_order=step.order,
@@ -135,7 +135,10 @@ def _execute_todo(
                 results=results,
                 results_by_todo=results_by_todo,
                 seen=seen,
-            ) or todo_ok
+            )
+            todo_ok = fan_out_ok or todo_ok
+            if fan_out_blocked:
+                todo.status = "blocked"
             continue
         finding, skipped_duplicate = _execute_call(todo, tool, fn, args, seen)
         if skipped_duplicate:
@@ -150,7 +153,8 @@ def _execute_todo(
         todo.result_ref = tool
         todo_ok = True
 
-    todo.status = "done" if todo_ok else "blocked"
+    if todo.status != "blocked":
+        todo.status = "done" if todo_ok else "blocked"
 
 
 def _execute_call(
@@ -183,21 +187,23 @@ def _execute_fan_out(
     results: dict[int, StepResult],
     results_by_todo: dict[str, StepResult],
     seen: set[tuple[str, str]],
-) -> bool:
+) -> tuple[bool, bool]:
     fan_args = [key for key, value in args.items() if isinstance(value, _FanOutValues)]
     if len(fan_args) != 1:
         _add_blocker(todo, "ambiguous auto-wire: multiple fan-out args")
-        return False
+        return False, True
     fan_arg = fan_args[0]
     values = list(args[fan_arg])
     if not values:
         _add_blocker(todo, "empty producer")
         _append_trace(plan, "empty producer")
-        return False
+        return False, True
+    capped = False
     if len(values) > _FAN_OUT_CAP:
         _add_blocker(todo, f"fan-out capped at {_FAN_OUT_CAP} of {len(values)}")
         _append_trace(plan, f"fan-out capped at {_FAN_OUT_CAP} of {len(values)}")
         values = values[:_FAN_OUT_CAP]
+        capped = True
 
     todo_ok = False
     for index, value in enumerate(values, start=1):
@@ -216,7 +222,7 @@ def _execute_fan_out(
         results_by_todo[todo.id] = result
         todo.result_ref = tool
         todo_ok = True
-    return todo_ok
+    return todo_ok, capped
 
 
 def _step_result(
@@ -259,12 +265,22 @@ def _resolve_args(
     results: dict[int, StepResult],
     results_by_todo: dict[str, StepResult],
     todo: TodoItem,
+    plan: TodoPlan,
 ) -> dict[str, Any]:
     selector_values = _selector_values(args, todo)
+    producer_todos = {item.id: item for item in plan.items}
+    explicit_fan_out = _explicit_fan_out_requested(todo, args)
     resolved: dict[str, Any] = {}
     for key, value in args.items():
         try:
-            resolved[str(key)] = _resolve_value(value, results, results_by_todo, selector_values)
+            resolved[str(key)] = _resolve_value(
+                value,
+                results,
+                results_by_todo,
+                selector_values,
+                producer_todos,
+                explicit_fan_out,
+            )
         except _AmbiguousRef as exc:
             if not exc.arg_name:
                 exc.arg_name = str(key)
@@ -277,17 +293,43 @@ def _resolve_value(
     results: dict[int, StepResult],
     results_by_todo: dict[str, StepResult],
     selector_values: dict[str, Any],
+    producer_todos: dict[str, TodoItem],
+    explicit_fan_out: bool,
 ) -> Any:
     if isinstance(value, Mapping):
         ref = value.get("$from")
         if isinstance(ref, Mapping):
-            return _resolve_ref(ref, results, results_by_todo, selector_values)
+            return _resolve_ref(
+                ref,
+                results,
+                results_by_todo,
+                selector_values,
+                producer_todos,
+                explicit_fan_out,
+            )
         return {
-            str(key): _resolve_value(child, results, results_by_todo, selector_values)
+            str(key): _resolve_value(
+                child,
+                results,
+                results_by_todo,
+                selector_values,
+                producer_todos,
+                explicit_fan_out,
+            )
             for key, child in value.items()
         }
     if isinstance(value, list):
-        return [_resolve_value(child, results, results_by_todo, selector_values) for child in value]
+        return [
+            _resolve_value(
+                child,
+                results,
+                results_by_todo,
+                selector_values,
+                producer_todos,
+                explicit_fan_out,
+            )
+            for child in value
+        ]
     return value
 
 
@@ -296,6 +338,8 @@ def _resolve_ref(
     results: dict[int, StepResult],
     results_by_todo: dict[str, StepResult],
     selector_values: dict[str, Any],
+    producer_todos: dict[str, TodoItem],
+    explicit_fan_out: bool,
 ) -> Any:
     path = ref.get("path", "")
     if not isinstance(path, str):
@@ -314,13 +358,19 @@ def _resolve_ref(
             raise _UnresolvedRef("invalid $from cardinality")
         selector_value = ref.get("selector_value")
         if selector_value in (None, "") and selector:
+            producer = producer_todos.get(todo_id)
+            if producer is not None:
+                selector_value = _todo_selector_value(producer, selector)
+        if selector_value in (None, "") and selector:
             selector_value = selector_values.get(selector)
+        fan_out = _ref_fan_out(ref) or explicit_fan_out
         return _dig_select(
             result.data,
             path,
             selector=selector,
             cardinality=cardinality,
             selector_value=selector_value,
+            fan_out=fan_out,
         )
 
     step = ref.get("step")
@@ -350,6 +400,42 @@ def _simple_selector_value(value: Any) -> Any:
     return value
 
 
+def _todo_selector_value(todo: TodoItem, selector: str) -> Any | None:
+    values: list[Any] = []
+    _append_selector_value(values, todo.inputs.get(selector))
+    for step in todo.tool_calls:
+        _append_selector_value(values, step.args.get(selector))
+    if not values:
+        return None
+    first = values[0]
+    if all(value == first for value in values[1:]):
+        return first
+    return None
+
+
+def _append_selector_value(values: list[Any], value: Any) -> None:
+    selector_value = _simple_selector_value(value)
+    if selector_value is not None:
+        values.append(selector_value)
+
+
+def _explicit_fan_out_requested(todo: TodoItem, args: Mapping[str, Any]) -> bool:
+    return (
+        _has_true(todo.inputs, "fan_out")
+        or _has_true(todo.inputs, "select_all")
+        or _has_true(args, "fan_out")
+        or _has_true(args, "select_all")
+    )
+
+
+def _ref_fan_out(ref: Mapping[str, Any]) -> bool:
+    return _has_true(ref, "fan_out") or _has_true(ref, "select_all")
+
+
+def _has_true(values: Mapping[str, Any], key: str) -> bool:
+    return values.get(key) is True
+
+
 def _dig_select(
     data: Any,
     path: str,
@@ -357,10 +443,19 @@ def _dig_select(
     selector: str | None,
     cardinality: str,
     selector_value: Any,
+    fan_out: bool,
 ) -> Any:
     values = _dig_many(data, path, selector=selector, selector_value=selector_value)
-    if cardinality == "many" and selector_value in (None, ""):
-        return _FanOutValues(values)
+    if cardinality == "many":
+        if selector_value not in (None, ""):
+            return _strict_one(values)
+        if fan_out:
+            return _FanOutValues(values)
+        raise _AmbiguousRef("needs selector or explicit all")
+    return _strict_one(values)
+
+
+def _strict_one(values: list[Any]) -> Any:
     if not values:
         raise _AmbiguousRef("empty producer")
     if len(values) != 1:
@@ -430,6 +525,8 @@ def _ambiguous_blocker(exc: _AmbiguousRef) -> str:
     if exc.reason == "empty producer":
         return "empty producer"
     arg = exc.arg_name or "reference"
+    if exc.reason == "needs selector or explicit all":
+        return f"ambiguous auto-wire: {arg}: needs selector or explicit all"
     return f"ambiguous auto-wire: {arg}"
 
 

@@ -93,6 +93,47 @@ def test_bind_remaps_legacy_step_ref_to_todo_ref() -> None:
     }
 
 
+def test_bind_auto_wire_carries_producer_selector_value() -> None:
+    plan = TodoPlan(
+        goal="test",
+        protocol_id="counterparty_card",
+        status="in_progress",
+        confidence=0.9,
+        items=[
+            TodoItem(
+                id="resolve_party_role",
+                order=1,
+                inputs={"contract_id": "CT-1", "role": "customer"},
+                tool_calls=[
+                    PlanStep(
+                        order=1,
+                        tool="eva_get_contract_parties",
+                        args={"contract_id": "CT-1"},
+                    )
+                ],
+            ),
+            TodoItem(
+                id="get_counterparty",
+                type="dependent",
+                order=2,
+                tool_calls=[PlanStep(order=2, tool="eva_get_counterparty", args={})],
+            ),
+        ],
+    )
+
+    report = bind_plan(plan)
+
+    assert len(report.auto_wired) == 1
+    assert report.auto_wired[0].selector_value == "customer"
+    assert plan.items[1].tool_calls[0].args["counterparty_id"]["$from"] == {
+        "todo": "resolve_party_role",
+        "path": "parties[].counterparty_id",
+        "selector": "role",
+        "cardinality": "many",
+        "selector_value": "customer",
+    }
+
+
 def test_bind_reports_multiple_producers_without_choosing_first() -> None:
     plan = TodoPlan(
         goal="test",

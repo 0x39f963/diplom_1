@@ -33,7 +33,9 @@ class AutoWire(BaseModel):
     producer_id: str
     source_path: str
     selector: str | None = None
+    selector_value: Any | None = None
     cardinality: str = "one"
+    fan_out: bool = False
 
 
 class BindIssue(BaseModel):
@@ -114,7 +116,7 @@ def _remap_value(
                 producer_todo = order_to_todo.get(step_order)
                 if producer_todo:
                     new_ref: dict[str, Any] = {"todo": producer_todo, "path": path}
-                    for key in ("selector", "selector_value", "cardinality"):
+                    for key in ("selector", "selector_value", "cardinality", "fan_out"):
                         if key in ref:
                             new_ref[key] = ref[key]
                     value["$from"] = new_ref
@@ -247,14 +249,21 @@ def _insert_auto_wire(
     producer: TodoItem,
     report: BindReport,
 ) -> None:
-    step.args[relation.target_arg] = {
-        "$from": {
-            "todo": producer.id,
-            "path": relation.source_path,
-            "selector": relation.selector,
-            "cardinality": relation.cardinality,
-        }
+    selector_value = (
+        _todo_selector_value(producer, relation.selector) if relation.selector else None
+    )
+    fan_out = relation.cardinality == "many" and _explicit_fan_out_requested(todo, step)
+    ref: dict[str, Any] = {
+        "todo": producer.id,
+        "path": relation.source_path,
+        "selector": relation.selector,
+        "cardinality": relation.cardinality,
     }
+    if selector_value is not None:
+        ref["selector_value"] = selector_value
+    if fan_out:
+        ref["fan_out"] = True
+    step.args[relation.target_arg] = {"$from": ref}
     if producer.order not in todo.depends_on:
         todo.depends_on.append(producer.order)
     wire = AutoWire(
@@ -264,7 +273,9 @@ def _insert_auto_wire(
         producer_id=producer.id,
         source_path=relation.source_path,
         selector=relation.selector,
+        selector_value=selector_value,
         cardinality=relation.cardinality,
+        fan_out=fan_out,
     )
     report.auto_wired.append(wire)
     _append_trace(plan, _auto_wire_trace(wire))
@@ -276,6 +287,40 @@ def _auto_wire_trace(wire: AutoWire) -> str:
         f"auto-wire {wire.target_tool}.{wire.target_arg} "
         f"<- {wire.producer_id}.{wire.source_path}{selector}"
     )
+
+
+def _todo_selector_value(todo: TodoItem, selector: str) -> Any | None:
+    values: list[Any] = []
+    _append_selector_value(values, todo.inputs.get(selector))
+    for step in todo.tool_calls:
+        _append_selector_value(values, step.args.get(selector))
+    if not values:
+        return None
+    first = values[0]
+    if all(value == first for value in values[1:]):
+        return first
+    return None
+
+
+def _append_selector_value(values: list[Any], value: Any) -> None:
+    if value in (None, ""):
+        return
+    if isinstance(value, (Mapping, list)):
+        return
+    values.append(value)
+
+
+def _explicit_fan_out_requested(todo: TodoItem, step: PlanStep) -> bool:
+    return (
+        _has_true(todo.inputs, "fan_out")
+        or _has_true(todo.inputs, "select_all")
+        or _has_true(step.args, "fan_out")
+        or _has_true(step.args, "select_all")
+    )
+
+
+def _has_true(values: Mapping[str, Any], key: str) -> bool:
+    return values.get(key) is True
 
 
 def _issue_trace(kind: str, issue: BindIssue) -> str:

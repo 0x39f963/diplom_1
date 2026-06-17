@@ -88,14 +88,37 @@ parties[].counterparty_id
 role=customer -> один counterparty_id -> один вызов eva_get_counterparty
 ```
 
-Если пользователь спросил "все стороны", selector value нет. При `cardinality=many` исполнитель делает
-fan-out: вызывает `eva_get_counterparty` по одному разу на каждое значение.
+Если пользователь спросил "все стороны", план должен содержать явный all-сигнал:
 
-Fan-out ограничен cap 20. Если значений больше, исполнитель обработает первые 20 и добавит blocker и trace:
+```json
+{"fan_out": true}
+```
+
+или:
+
+```json
+{"select_all": true}
+```
+
+Binding переносит этот сигнал в `$from.fan_out=true`, когда вставляет relation-backed ссылку. Только после
+этого `cardinality=many` превращается в fan-out: исполнитель вызывает `eva_get_counterparty` по одному разу
+на каждое значение.
+
+Если selector value нет и all-сигнала тоже нет, список считается неоднозначным. Исполнитель блокирует todo с
+blocker:
+
+```text
+ambiguous auto-wire: counterparty_id: needs selector or explicit all
+```
+
+Fan-out ограничен cap 20. Если значений больше, исполнитель обработает первые 20, сохранит partial findings
+и добавит blocker и trace:
 
 ```text
 fan-out capped at 20 of N
 ```
+
+Такой результат считается неполным: todo остается `blocked`, а план уходит в `awaiting_clarification`.
 
 Пустой список производителя блокирует план с blocker:
 
@@ -119,12 +142,14 @@ ContractParty->Counterparty by role:
 2. Результат содержит `parties[]`.
 3. Todo `get_counterparty` требует `counterparty_id`.
 4. Если есть `role=customer`, selector выбирает одну сторону.
-5. Если role нет и нужна обработка всех сторон, срабатывает fan-out.
+5. Если role нет и пользователь явно просит все стороны, `fan_out=true` запускает fan-out.
+6. Если role нет и all-сигнала нет, план просит уточнение.
 
 ## Что код не делает
 
 - Не угадывает производителя, если их несколько.
 - Не берет первый элемент списка при неоднозначности.
 - Не скрывает пустой список производителя.
+- Не запускает fan-out без явного all-сигнала.
 - Не усекает fan-out молча.
 - Не вызывает инструменты во время binding. Binding только меняет план и пишет trace.

@@ -33,7 +33,8 @@ def domain_selector(state: AgentState) -> dict:
 
     llm_selected = _select_with_llm(query, intent_kind, entities)
     fallback_selected = _select_from_refs(refs, all_entities=list(entities))
-    selected = _unique([*llm_selected, *fallback_selected])
+    nlu_selected = state.nlu.entities if state.nlu is not None else []
+    selected = _unique([*llm_selected, *fallback_selected, *nlu_selected])
     if not selected:
         selected = list(entities)
 

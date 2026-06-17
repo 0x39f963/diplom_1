@@ -10,6 +10,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from eva_agent.nlu.gazetteer import DOMAIN_SIGNAL_LEMMAS
+from eva_agent.nlu.ru import lemmatize_text
 from eva_agent.planner.protocols import (
     _CONTRACT_CARD_HINTS,
     _COUNTERPARTY_HINTS,
@@ -145,7 +147,13 @@ def has_domain_signal(query: str) -> bool:
     if refs.has_any:
         return True
     text = query.lower()
-    return any(hint in text for hint in _DOMAIN_HINTS)
+    if any(hint in text for hint in _DOMAIN_HINTS):
+        return True
+    try:
+        lemmas = set(lemmatize_text(query))
+    except Exception:
+        return False
+    return bool(lemmas & DOMAIN_SIGNAL_LEMMAS)
 
 
 @lru_cache(maxsize=1)

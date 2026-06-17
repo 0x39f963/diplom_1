@@ -38,5 +38,6 @@ class LLMClient(ABC):
         *,
         temperature: float | None = None,
         json_mode: bool = False,
+        schema: dict[str, Any] | None = None,
     ) -> LLMResponse:
         """Синхронный вызов модели. `json_mode=True` просит строгий JSON-ответ."""

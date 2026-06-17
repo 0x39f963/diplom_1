@@ -22,6 +22,7 @@ from eva_agent.nodes.agents import (
 from eva_agent.nodes.dialog_nodes import load_context, save_turn
 from eva_agent.nodes.domain_nodes import domain_selector
 from eva_agent.nodes.guards import input_guard, output_guard
+from eva_agent.nodes.nlu import nlu_preprocessor
 from eva_agent.settings import settings
 from eva_agent.state import AgentState
 from eva_agent.tracing import traced_node
@@ -68,6 +69,7 @@ def build_graph() -> CompiledStateGraph:
     # traced_node - обертка в span LangFuse (узел дерева вызовов); no-op без ключей.
     graph.add_node("input_guard", traced_node("input_guard", input_guard))
     graph.add_node("load_context", traced_node("load_context", load_context))
+    graph.add_node("nlu_preprocessor", traced_node("nlu_preprocessor", nlu_preprocessor))
     graph.add_node("supervisor", traced_node("supervisor", supervisor))
     graph.add_node("legal_agent", traced_node("legal_agent", legal_agent))
     graph.add_node("interface_agent", traced_node("interface_agent", interface_agent))
@@ -84,7 +86,8 @@ def build_graph() -> CompiledStateGraph:
     graph.add_conditional_edges(
         "input_guard", _route_after_input, {"refuse": "refuse", "load_context": "load_context"}
     )
-    graph.add_edge("load_context", "supervisor")
+    graph.add_edge("load_context", "nlu_preprocessor")
+    graph.add_edge("nlu_preprocessor", "supervisor")
     graph.add_conditional_edges(
         "supervisor",
         _route_after_supervisor,

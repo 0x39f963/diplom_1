@@ -25,6 +25,8 @@ chainlit.md
 .langfuse/
 *.log
 evals/out/
+src/eva_agent/nlu/fewshot_index/*.json
+src/eva_agent/nlu/fewshot_index/*.npy
 .cursor/
 
 # os

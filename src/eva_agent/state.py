@@ -14,6 +14,7 @@ from eva_agent.dialog.models import MemoryDecision
 from eva_agent.domain.checklist import PlanningChecklist
 from eva_agent.domain.plan import TodoPlan
 from eva_agent.domain.slice import DomainSlice
+from eva_agent.nlu.preprocess import NluFeatures
 from eva_agent.security.verdict import GuardVerdict
 
 IntentKind = Literal[
@@ -78,6 +79,7 @@ class AgentState(BaseModel):
 
     user_input_clean: str | None = None     # после input_filter
     memory: MemoryDecision | None = None
+    nlu: NluFeatures | None = None
     guard_in: GuardVerdict | None = None
     guard_out: GuardVerdict | None = None
 

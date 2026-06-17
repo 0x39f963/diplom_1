@@ -31,6 +31,7 @@ Provider = Literal["claude", "codex"]
 
 _BACKOFF_CAP_SEC = 5.0
 _JSON_MODE_INSTRUCTION = "Return strict JSON only. Do not wrap it in Markdown."
+_JSON_SCHEMA_INSTRUCTION = "Return strict JSON matching this JSON Schema. Do not wrap it in Markdown:"
 
 
 @lru_cache(maxsize=1)
@@ -90,8 +91,9 @@ class CliAgentClient(LLMClient):
         *,
         temperature: float | None = None,
         json_mode: bool = False,
+        schema: dict[str, Any] | None = None,
     ) -> LLMResponse:
-        prompt = _build_prompt(system, user, json_mode=json_mode)
+        prompt = _build_prompt(system, user, json_mode=json_mode, schema=schema)
         started = time.monotonic()
         result = self._run_with_observation(prompt, system, user)
         return LLMResponse(
@@ -239,13 +241,22 @@ class CliAgentClient(LLMClient):
         time.sleep(delay)
 
 
-def _build_prompt(system: str, user: str, *, json_mode: bool) -> str:
+def _build_prompt(
+    system: str,
+    user: str,
+    *,
+    json_mode: bool,
+    schema: dict[str, Any] | None = None,
+) -> str:
     parts = []
     if system.strip():
         parts.append(f"System instruction:\n{system.strip()}")
     if user.strip():
         parts.append(f"User request:\n{user.strip()}")
-    if json_mode:
+    if schema is not None:
+        parts.append(_JSON_SCHEMA_INSTRUCTION)
+        parts.append(json.dumps(schema, ensure_ascii=False, sort_keys=True))
+    elif json_mode:
         parts.append(_JSON_MODE_INSTRUCTION)
     return "\n\n".join(parts)
 

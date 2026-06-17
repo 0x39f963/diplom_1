@@ -35,12 +35,17 @@ def _to_chunk(record: dict) -> Chunk:
 
 
 def _retrieve(query: str, *, in_force_only: bool = True) -> list[Chunk]:
-    response = httpx.post(
-        f"{settings.rag_api_base}/retrieval",
-        json={"query": query, "in_force_only": in_force_only},
-        timeout=120.0,
-    )
-    response.raise_for_status()
+    try:
+        response = httpx.post(
+            f"{settings.rag_api_base}/retrieval",
+            json={"query": query, "in_force_only": in_force_only},
+            timeout=120.0,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError:
+        if settings.eva_api_base == "mock":
+            return []
+        raise
     records = response.json().get("records", [])
     return [_to_chunk(r) for r in records]
 

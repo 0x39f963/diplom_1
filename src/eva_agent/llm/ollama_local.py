@@ -57,6 +57,7 @@ class OllamaLocalClient(LLMClient):
         *,
         temperature: float | None = None,
         json_mode: bool = False,
+        schema: dict[str, Any] | None = None,
     ) -> LLMResponse:
         payload: dict[str, Any] = {
             "model": self.model,
@@ -69,7 +70,9 @@ class OllamaLocalClient(LLMClient):
             "keep_alive": self._keep_alive,
             "options": {"temperature": 0.1 if temperature is None else temperature},
         }
-        if json_mode:
+        if schema is not None:
+            payload["format"] = schema
+        elif json_mode:
             payload["format"] = "json"
 
         started = time.monotonic()

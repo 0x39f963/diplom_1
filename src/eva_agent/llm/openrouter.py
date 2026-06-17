@@ -64,6 +64,7 @@ class OpenRouterClient(LLMClient):
         *,
         temperature: float | None = None,
         json_mode: bool = False,
+        schema: dict[str, Any] | None = None,
     ) -> LLMResponse:
         kwargs: dict[str, Any] = {
             "model": self.model,
@@ -73,7 +74,12 @@ class OpenRouterClient(LLMClient):
             ],
             "temperature": 0.1 if temperature is None else temperature,
         }
-        if json_mode:
+        if schema is not None:
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "frame", "schema": schema, "strict": True},
+            }
+        elif json_mode:
             kwargs["response_format"] = {"type": "json_object"}
         kwargs["extra_body"] = self._extra_body()
 

@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     eva_dialog_session: str = ""
     eva_dialog_summarize_after: int = 12
 
+    # Few-shot retrieval
+    fewshot_dense_enabled: bool = True
+    fewshot_embed_model: str = "BAAI/bge-m3"
+    fewshot_embed_device: str = "cpu"
+    fewshot_k: int = 5
+
     # Observability
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""

@@ -33,6 +33,11 @@ def test_has_domain_signal_from_id_or_keyword() -> None:
     assert not has_domain_signal("Как сварить кофе?")
 
 
+def test_has_domain_signal_matches_word_forms() -> None:
+    assert has_domain_signal("Сверь данные по договорам.")
+    assert has_domain_signal("Что с контрагентами?")
+
+
 def test_resolve_contract_ref_supports_synthetic_numeric_and_number() -> None:
     assert resolve_contract_ref("CT-2") == 2
     assert resolve_contract_ref("77") == 77

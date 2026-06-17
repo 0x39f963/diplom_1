@@ -5,7 +5,7 @@ RAG_API := http://localhost:8077
 # Поиск по закону работает отдельным сервисом (адрес в RAG_API_BASE).
 # Подними его рядом перед cli/eval/ui: docker compose up -d && make api
 
-.PHONY: help install smoke cli eval bench validate-bench ui mcp domain-map lint type test gates
+.PHONY: help install smoke cli eval bench validate-bench ui mcp domain-map fewshot-index lint type test gates
 
 help: ## Список целей
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-8s\033[0m %s\n", $$1, $$2}'
@@ -25,6 +25,9 @@ mcp: ## MCP-сервер документов по stdio
 
 domain-map: ## Regenerate domain_map.json from entity_map
 	$(PY) -m eva_agent.tools.build_domain_map
+
+fewshot-index: ## Build/rebuild dense few-shot cache
+	$(PY) -m eva_agent.nlu.fewshot --rebuild
 
 eval: ## Бенчмарк + 3 типа eval + метрики (нужен поднятый retrieval API)
 	RAG_API_BASE=$(RAG_API) $(PY) -m evals.run_evals

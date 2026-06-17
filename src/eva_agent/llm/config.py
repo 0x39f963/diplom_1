@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from eva_agent import metrics
 from eva_agent.llm.base import LLMClient, LLMResponse
 from eva_agent.llm.cli_agent import CliAgentClient
@@ -28,8 +30,15 @@ class _TrackedClient(LLMClient):
         *,
         temperature: float | None = None,
         json_mode: bool = False,
+        schema: dict[str, Any] | None = None,
     ) -> LLMResponse:
-        response = self._inner.invoke(system, user, temperature=temperature, json_mode=json_mode)
+        response = self._inner.invoke(
+            system,
+            user,
+            temperature=temperature,
+            json_mode=json_mode,
+            schema=schema,
+        )
         metrics.record(response.usage)
         return response
 

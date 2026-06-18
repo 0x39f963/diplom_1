@@ -161,9 +161,14 @@ def test_graph_mixed_route_runs_frame_parser_compiler_and_data_gather(monkeypatc
     domain_client = _StaticClient('{"entities":["Contract","ContractParty","Counterparty"]}')
     frame_client = _StaticClient(json.dumps(frame_payload, ensure_ascii=False))
 
-    def fake_detect_injection(user_input: str, untrusted_data: str = "") -> GuardVerdict:
+    def fake_detect_injection(
+        user_input: str,
+        untrusted_data: str = "",
+        domain_signals: list[str] | None = None,
+    ) -> GuardVerdict:
         assert user_input
         assert untrusted_data == ""
+        assert domain_signals is not None
         return GuardVerdict(decision="allow", risk_score=0.0, reason="ok")
 
     def fake_agent_get_client(role: str) -> _AgentClient:

@@ -212,9 +212,14 @@ def test_multi_turn_continuation_replans_and_saves_history(
     monkeypatch.setattr(settings, "planner_use_protocol_compiler", False)
     build_calls = 0
 
-    def fake_detect_injection(user_input: str, untrusted_data: str = "") -> GuardVerdict:
+    def fake_detect_injection(
+        user_input: str,
+        untrusted_data: str = "",
+        domain_signals: list[str] | None = None,
+    ) -> GuardVerdict:
         assert user_input
         assert untrusted_data == ""
+        assert domain_signals is not None
         return GuardVerdict(decision="allow", risk_score=0.0, reason="ok")
 
     def fake_get_agent_client(role: str) -> _AgentClient:

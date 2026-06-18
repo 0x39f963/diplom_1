@@ -46,10 +46,13 @@ STATUS_BY_LEMMA: dict[str, str] = {
 
 ACTION_BY_LEMMA: dict[str, str] = {
     "открыть": "open",
+    "прочитать": "read",
+    "читать": "read",
     "скачать": "download",
     "загрузить": "download",
     "прикрепить": "attach",
     "добавить": "attach",
+    "приложить": "attach",
     "показать": "show",
     "посмотреть": "show",
     "сравнить": "compare",

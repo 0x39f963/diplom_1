@@ -26,6 +26,45 @@ from eva_agent.tools.entity_ref import EntityRefs, extract_refs
 DateHint = Literal["none", "date", "yesterday", "last_week", "last_month", "month"]
 
 _EXPLICIT_DATE_RE = re.compile(r"\b\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?\b")
+_READ_ACTIONS = frozenset({"read", "list", "search", "open", "download", "show"})
+_WRITE_ACTIONS = frozenset({"attach", "delete", "update", "send"})
+_WRITE_LEMMAS = frozenset(
+    {
+        "добавить",
+        "изменить",
+        "обновить",
+        "отправить",
+        "переслать",
+        "передать",
+        "прикрепить",
+        "приложить",
+        "удалить",
+        "удаль",
+        "убрать",
+    }
+)
+_WRITE_TEXT_MARKERS = (
+    "добавь",
+    "добавить",
+    "измени",
+    "изменить",
+    "обнови",
+    "обновить",
+    "отправь",
+    "отправить",
+    "передай",
+    "передать",
+    "перешли",
+    "переслать",
+    "прикрепи",
+    "прикрепить",
+    "приложи",
+    "приложить",
+    "удали",
+    "удалить",
+    "убери",
+    "убрать",
+)
 
 
 class DateFeature(BaseModel):
@@ -65,6 +104,21 @@ def preprocess(query: str) -> NluFeatures:
         date_hint=dates[0].date_hint if dates else "none",
         action_verbs=_actions(lemmas),
     )
+
+
+def is_read_only_domain_command(query: str) -> bool:
+    features = preprocess(query)
+    actions = set(features.action_verbs)
+    if actions & _WRITE_ACTIONS:
+        return False
+    if set(features.lemmas) & _WRITE_LEMMAS:
+        return False
+    lowered = query.lower().replace("ё", "е")
+    if any(marker in lowered for marker in _WRITE_TEXT_MARKERS):
+        return False
+    if actions & _READ_ACTIONS:
+        return True
+    return bool(extract_refs(query).all_ids)
 
 
 def _refs_to_dict(refs: EntityRefs) -> dict[str, list[str]]:

@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="960" viewBox="0 0 900 960" font-family="Segoe UI, Roboto, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#5b6472"/>
+    </marker>
+    <marker id="arrR" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#d9534f"/>
+    </marker>
+    <marker id="arrL" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#e0a33a"/>
+    </marker>
+    <style>
+      .t{font-size:13px;fill:#0f1117;text-anchor:middle;dominant-baseline:middle;font-weight:600}
+      .ts{font-size:11px;fill:#5b6472;text-anchor:middle;dominant-baseline:middle}
+      .tl{font-size:11px;fill:#5b6472;text-anchor:start;dominant-baseline:middle}
+      .edge{stroke:#5b6472;stroke-width:1.6;fill:none;marker-end:url(#arr)}
+      .lbl{font-size:11px;fill:#5b6472;text-anchor:middle}
+      .note{font-size:11px;fill:#34405a;text-anchor:middle}
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="960" fill="#ffffff"/>
+  <text x="28" y="34" font-size="19" font-weight="700" fill="#0f1117">Ассистент Ева - текущий граф агента</text>
+  <text x="28" y="56" font-size="12.5" fill="#5b6472">охрана, память, разбор текста, оркестратор, три ветки, критик и сохранение хода</text>
+
+  <rect x="360" y="82" width="180" height="38" rx="8" fill="#eef0f4" stroke="#c7ccd6" stroke-width="1.5"/>
+  <text class="t" x="450" y="101">START</text>
+
+  <rect x="350" y="150" width="200" height="48" rx="8" fill="#fff1de" stroke="#e0a33a" stroke-width="1.5"/>
+  <text class="t" x="450" y="167">input_guard</text>
+  <text class="ts" x="450" y="184">охрана входа</text>
+  <path class="edge" d="M450,120 L450,150"/>
+
+  <rect x="652" y="151" width="170" height="46" rx="8" fill="#fdecec" stroke="#d9534f" stroke-width="1.5"/>
+  <text class="t" x="737" y="168">refuse</text>
+  <text class="ts" x="737" y="184">атака или мусор</text>
+  <path d="M550,174 L652,174" stroke="#d9534f" stroke-width="1.6" fill="none" marker-end="url(#arrR)" stroke-dasharray="5 3"/>
+  <text class="lbl" x="602" y="166" fill="#d9534f">block</text>
+
+  <rect x="350" y="232" width="200" height="48" rx="8" fill="#e6f3ee" stroke="#2bb673" stroke-width="1.5"/>
+  <text class="t" x="450" y="249">load_context</text>
+  <text class="ts" x="450" y="266">память диалога</text>
+  <path class="edge" d="M450,198 L450,232"/>
+
+  <rect x="350" y="314" width="200" height="48" rx="8" fill="#e8f0fb" stroke="#3a7bd5" stroke-width="1.5"/>
+  <text class="t" x="450" y="331">nlu_preprocessor</text>
+  <text class="ts" x="450" y="348">леммы, ID, даты, сущности</text>
+  <path class="edge" d="M450,280 L450,314"/>
+
+  <rect x="350" y="396" width="200" height="48" rx="8" fill="#efe9ff" stroke="#7c5cff" stroke-width="1.5"/>
+  <text class="t" x="450" y="413">supervisor</text>
+  <text class="ts" x="450" y="430">оркестратор маршрута</text>
+  <path class="edge" d="M450,362 L450,396"/>
+
+  <rect x="54" y="514" width="184" height="50" rx="8" fill="#e6f3ee" stroke="#2bb673" stroke-width="1.5"/>
+  <text class="t" x="146" y="531">legal_agent</text>
+  <text class="ts" x="146" y="548">RAG по закону</text>
+
+  <rect x="348" y="500" width="204" height="66" rx="8" fill="#fff7da" stroke="#d8b41e" stroke-width="1.8"/>
+  <text class="t" x="450" y="517">intent_frame_parser</text>
+  <text class="ts" x="450" y="535">LLM заполняет анкету</text>
+  <text class="ts" x="450" y="551">единственная точка мышления</text>
+
+  <rect x="662" y="514" width="184" height="50" rx="8" fill="#e8f0fb" stroke="#3a7bd5" stroke-width="1.5"/>
+  <text class="t" x="754" y="531">interface_agent</text>
+  <text class="ts" x="754" y="548">справка по системе</text>
+
+  <path class="edge" d="M400,444 C320,468 210,482 146,514"/>
+  <path class="edge" d="M450,444 L450,500"/>
+  <path class="edge" d="M500,444 C588,468 706,482 754,514"/>
+  <text class="lbl" x="265" y="474">закон</text>
+  <text class="lbl" x="475" y="474">данные</text>
+  <text class="lbl" x="632" y="474">интерфейс</text>
+
+  <rect x="348" y="606" width="204" height="48" rx="8" fill="#e8f0fb" stroke="#3a7bd5" stroke-width="1.5"/>
+  <text class="t" x="450" y="623">domain_selector</text>
+  <text class="ts" x="450" y="640">выбор области данных</text>
+  <path class="edge" d="M450,566 L450,606"/>
+
+  <rect x="348" y="694" width="204" height="58" rx="8" fill="#e6f3ee" stroke="#2bb673" stroke-width="1.5"/>
+  <text class="t" x="450" y="711">data_gather</text>
+  <text class="ts" x="450" y="728">компилятор плана</text>
+  <text class="ts" x="450" y="744">+ read-only инструменты</text>
+  <path class="edge" d="M450,654 L450,694"/>
+
+  <rect x="632" y="622" width="170" height="42" rx="8" fill="#f3f4f7" stroke="#c7ccd6" stroke-width="1.5"/>
+  <text class="t" x="717" y="643">clarify</text>
+  <path d="M552,630 C582,630 604,642 632,642" stroke="#5b6472" stroke-width="1.6" fill="none" marker-end="url(#arr)" stroke-dasharray="4 3"/>
+  <text class="lbl" x="592" y="623">нет данных</text>
+
+  <rect x="360" y="806" width="180" height="48" rx="8" fill="#fff7da" stroke="#d8b41e" stroke-width="1.5"/>
+  <text class="t" x="450" y="823">critic</text>
+  <text class="ts" x="450" y="840">проверка черновика</text>
+  <path class="edge" d="M146,564 C146,720 300,795 360,824"/>
+  <path class="edge" d="M450,752 L450,806"/>
+  <path class="edge" d="M754,564 C754,720 600,795 540,824"/>
+
+  <path d="M360,838 C210,850 96,790 92,688 C88,596 228,554 348,536"
+        stroke="#e0a33a" stroke-width="1.6" fill="none" marker-end="url(#arrL)" stroke-dasharray="5 3"/>
+  <text class="lbl" x="138" y="742" fill="#e0a33a">критик вернул, &lt;= MAX_LOOPS</text>
+
+  <rect x="360" y="884" width="180" height="42" rx="8" fill="#eef0f4" stroke="#c7ccd6" stroke-width="1.5"/>
+  <text class="t" x="450" y="905">finalize</text>
+  <path class="edge" d="M450,854 L450,884"/>
+  <text class="lbl" x="480" y="872">принято</text>
+
+  <rect x="600" y="884" width="180" height="42" rx="8" fill="#fff1de" stroke="#e0a33a" stroke-width="1.5"/>
+  <text class="t" x="690" y="905">output_guard</text>
+  <path class="edge" d="M540,905 L600,905"/>
+
+  <rect x="600" y="802" width="180" height="42" rx="8" fill="#e6f3ee" stroke="#2bb673" stroke-width="1.5"/>
+  <text class="t" x="690" y="823">save_turn</text>
+  <path class="edge" d="M690,884 L690,844"/>
+
+  <rect x="600" y="720" width="180" height="38" rx="8" fill="#eef0f4" stroke="#c7ccd6" stroke-width="1.5"/>
+  <text class="t" x="690" y="739">END</text>
+  <path class="edge" d="M690,802 L690,758"/>
+
+  <rect x="40" y="885" width="248" height="46" rx="8" fill="#f3f4f7" stroke="#d8dde6" stroke-width="1.3"/>
+  <text class="tl" x="58" y="903">План действий собирает код</text>
+  <text class="tl" x="58" y="919">по онтологии и картам протоколов.</text>
+</svg>

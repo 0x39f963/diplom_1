@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="560" viewBox="0 0 900 560" font-family="Segoe UI, Roboto, sans-serif">
+  <defs>
+    <style>
+      .h{font-size:13px;fill:#0f1117;font-weight:700}
+      .t{font-size:11px;fill:#34405a}
+      .n{font-size:11px;fill:#5b6472}
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="560" fill="#ffffff"/>
+  <text x="28" y="34" font-size="19" font-weight="700" fill="#0f1117">Шесть механизмов раунда</text>
+  <text x="28" y="56" font-size="12.5" fill="#5b6472">коротко: что изменилось в поведении агента после переделки</text>
+
+  <rect x="48" y="104" width="380" height="94" rx="8" fill="#fff1de" stroke="#e0a33a" stroke-width="1.5"/>
+  <text class="h" x="72" y="134">Охрана</text>
+  <text class="t" x="72" y="164">команда рядом с атакой -> атака уходит в отказ</text>
+
+  <rect x="472" y="104" width="380" height="94" rx="8" fill="#e8f0fb" stroke="#3a7bd5" stroke-width="1.5"/>
+  <text class="h" x="496" y="134">Связь задает цель</text>
+  <text class="t" x="496" y="164">цель угадывалась по словам -> relation ведет target</text>
+
+  <rect x="48" y="228" width="380" height="94" rx="8" fill="#e6f3ee" stroke="#2bb673" stroke-width="1.5"/>
+  <text class="h" x="72" y="258">Стороны без вопроса о роли</text>
+  <text class="t" x="72" y="288">агент спрашивал роль -> сторона берется из контекста</text>
+
+  <rect x="472" y="228" width="380" height="94" rx="8" fill="#f3f4f7" stroke="#c7ccd6" stroke-width="1.5"/>
+  <text class="h" x="496" y="258">Уточнение только по делу</text>
+  <text class="t" x="496" y="288">лишние вопросы на старте -> вопрос только по слоту</text>
+
+  <rect x="48" y="352" width="380" height="94" rx="8" fill="#efe9ff" stroke="#7c5cff" stroke-width="1.5"/>
+  <text class="h" x="72" y="382">Поиск как первый шаг</text>
+  <text class="t" x="72" y="412">ответ шел из догадки -> сначала lookup в данных</text>
+
+  <rect x="472" y="352" width="380" height="94" rx="8" fill="#fff7da" stroke="#d8b41e" stroke-width="1.5"/>
+  <text class="h" x="496" y="382">Закон и проверка покрытия</text>
+  <text class="t" x="496" y="412">нормы отдельно, атомы терялись -> нормы рядом, атомы покрыты</text>
+
+  <text class="n" x="48" y="512">Все карточки описывают один раунд: от входной охраны до выбора плана и проверки ответа.</text>
+</svg>

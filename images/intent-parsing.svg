@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="620" viewBox="0 0 920 620" font-family="Segoe UI, Roboto, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#5b6472"/>
+    </marker>
+    <marker id="arrR" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#d9534f"/>
+    </marker>
+    <marker id="arrL" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#e0a33a"/>
+    </marker>
+    <style>
+      .t{font-size:13px;fill:#0f1117;text-anchor:middle;dominant-baseline:middle;font-weight:600}
+      .ts{font-size:11px;fill:#5b6472;text-anchor:middle;dominant-baseline:middle}
+      .edge{stroke:#5b6472;stroke-width:1.6;fill:none;marker-end:url(#arr)}
+      .lbl{font-size:11px;fill:#5b6472;text-anchor:middle}
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="920" height="620" fill="#ffffff"/>
+  <text x="28" y="34" font-size="19" font-weight="700" fill="#0f1117">Разбор интента в типизированную анкету</text>
+  <text x="28" y="56" font-size="12.5" fill="#5b6472">детерминированные признаки дают черновик, LLM заполняет фрейм по схеме, затем идут merge и проверки</text>
+
+  <rect x="34" y="110" width="118" height="52" rx="8" fill="#eef0f4" stroke="#c7ccd6" stroke-width="1.5"/>
+  <text class="t" x="93" y="130">запрос</text>
+  <text class="ts" x="93" y="146">текст команды</text>
+
+  <rect x="190" y="102" width="148" height="68" rx="8" fill="#e8f0fb" stroke="#3a7bd5" stroke-width="1.5"/>
+  <text class="t" x="264" y="121">NLU-признаки</text>
+  <text class="ts" x="264" y="138">леммы, сущности</text>
+  <text class="ts" x="264" y="154">ID, даты</text>
+
+  <rect x="376" y="102" width="154" height="68" rx="8" fill="#e6f3ee" stroke="#2bb673" stroke-width="1.5"/>
+  <text class="t" x="453" y="121">черновик фрейма</text>
+  <text class="ts" x="453" y="138">правила и словари</text>
+  <text class="ts" x="453" y="154">без модели</text>
+
+  <rect x="568" y="96" width="160" height="80" rx="8" fill="#fff7da" stroke="#d8b41e" stroke-width="1.8"/>
+  <text class="t" x="648" y="116">LLM по схеме</text>
+  <text class="ts" x="648" y="134">заполняет поля</text>
+  <text class="ts" x="648" y="151">строгий JSON</text>
+  <text class="ts" x="648" y="166">без выбора плана</text>
+
+  <rect x="766" y="110" width="124" height="52" rx="8" fill="#e8f0fb" stroke="#3a7bd5" stroke-width="1.5"/>
+  <text class="t" x="828" y="130">merge</text>
+  <text class="ts" x="828" y="146">наложение</text>
+
+  <path class="edge" d="M152,136 L190,136"/>
+  <path class="edge" d="M338,136 L376,136"/>
+  <path class="edge" d="M530,136 L568,136"/>
+  <path class="edge" d="M728,136 L766,136"/>
+
+  <rect x="596" y="242" width="156" height="64" rx="8" fill="#e6f3ee" stroke="#2bb673" stroke-width="1.5"/>
+  <text class="t" x="674" y="260">нормализация</text>
+  <text class="ts" x="674" y="278">связь задает цель</text>
+  <text class="ts" x="674" y="294">стороны и слоты</text>
+
+  <rect x="396" y="242" width="160" height="64" rx="8" fill="#fff1de" stroke="#e0a33a" stroke-width="1.5"/>
+  <text class="t" x="476" y="260">валидация</text>
+  <text class="ts" x="476" y="278">схема, бизнес-слоты</text>
+  <text class="ts" x="476" y="294">покрытие атомов</text>
+
+  <rect x="198" y="242" width="158" height="64" rx="8" fill="#efe9ff" stroke="#7c5cff" stroke-width="1.5"/>
+  <text class="t" x="277" y="260">уверенность</text>
+  <text class="ts" x="277" y="278">модель + правила</text>
+  <text class="ts" x="277" y="294">композитный балл</text>
+
+  <path class="edge" d="M828,162 C828,210 730,220 674,242"/>
+  <path class="edge" d="M596,274 L556,274"/>
+  <path class="edge" d="M396,274 L356,274"/>
+
+  <rect x="198" y="392" width="158" height="58" rx="8" fill="#e6f3ee" stroke="#2bb673" stroke-width="1.5"/>
+  <text class="t" x="277" y="412">валидно</text>
+  <text class="ts" x="277" y="430">готовый фрейм</text>
+
+  <rect x="472" y="386" width="174" height="68" rx="8" fill="#fdecec" stroke="#d9534f" stroke-width="1.5"/>
+  <text class="t" x="559" y="406">невалидно</text>
+  <text class="ts" x="559" y="424">self-refine &lt;= 2</text>
+  <text class="ts" x="559" y="440">или fallback</text>
+
+  <rect x="310" y="526" width="300" height="50" rx="8" fill="#eef0f4" stroke="#c7ccd6" stroke-width="1.5"/>
+  <text class="t" x="460" y="545">итог: типизированная анкета</text>
+  <text class="ts" x="460" y="562">operation, target, relation, filters, slots</text>
+
+  <path class="edge" d="M277,306 L277,392"/>
+  <text class="lbl" x="307" y="350">ok</text>
+  <path d="M356,274 C460,300 546,330 559,386" stroke="#d9534f" stroke-width="1.6" fill="none" marker-end="url(#arrR)" stroke-dasharray="5 3"/>
+  <text class="lbl" x="492" y="326" fill="#d9534f">ошибка</text>
+  <path d="M559,386 C650,330 690,230 648,176" stroke="#e0a33a" stroke-width="1.6" fill="none" marker-end="url(#arrL)" stroke-dasharray="5 3"/>
+  <text class="lbl" x="700" y="306" fill="#e0a33a">повтор</text>
+  <path class="edge" d="M277,450 C277,500 380,512 420,526"/>
+  <path class="edge" d="M559,454 C559,500 520,510 500,526"/>
+</svg>

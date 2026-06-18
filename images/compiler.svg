@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="560" viewBox="0 0 900 560" font-family="Segoe UI, Roboto, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#5b6472"/>
+    </marker>
+    <marker id="arrB" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#3a7bd5"/>
+    </marker>
+    <style>
+      .t{font-size:13px;fill:#0f1117;text-anchor:middle;dominant-baseline:middle;font-weight:600}
+      .ts{font-size:11px;fill:#5b6472;text-anchor:middle;dominant-baseline:middle}
+      .tl{font-size:11px;fill:#34405a;dominant-baseline:middle}
+      .edge{stroke:#5b6472;stroke-width:1.6;fill:none;marker-end:url(#arr)}
+      .lbl{font-size:11px;fill:#5b6472;text-anchor:middle}
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="560" fill="#ffffff"/>
+  <text x="28" y="34" font-size="19" font-weight="700" fill="#0f1117">Детерминированный компилятор плана</text>
+  <text x="28" y="56" font-size="12.5" fill="#5b6472">план собирает код по онтологии, не модель</text>
+
+  <rect x="36" y="128" width="130" height="58" rx="8" fill="#eef0f4" stroke="#c7ccd6" stroke-width="1.5"/>
+  <text class="t" x="101" y="148">фрейм</text>
+  <text class="ts" x="101" y="166">анкета интента</text>
+
+  <rect x="214" y="94" width="210" height="126" rx="8" fill="#e8f0fb" stroke="#3a7bd5" stroke-width="1.5"/>
+  <text class="t" x="319" y="116">ранжирование карт</text>
+  <text class="ts" x="319" y="134">scoring протоколов</text>
+  <text class="tl" x="236" y="158">операция +50</text>
+  <text class="tl" x="236" y="176">цель +60</text>
+  <text class="tl" x="236" y="194">связь +28, слоты, бонусы</text>
+
+  <rect x="474" y="128" width="140" height="58" rx="8" fill="#e6f3ee" stroke="#2bb673" stroke-width="1.5"/>
+  <text class="t" x="544" y="148">лучшая карта</text>
+  <text class="ts" x="544" y="166">протокол задачи</text>
+
+  <rect x="662" y="112" width="180" height="90" rx="8" fill="#efe9ff" stroke="#7c5cff" stroke-width="1.5"/>
+  <text class="t" x="752" y="132">план шагов</text>
+  <text class="ts" x="752" y="150">todo_template</text>
+  <text class="ts" x="752" y="168">фильтры, lookup</text>
+  <text class="ts" x="752" y="186">сбор результата</text>
+
+  <path class="edge" d="M166,157 L214,157"/>
+  <path class="edge" d="M424,157 L474,157"/>
+  <path class="edge" d="M614,157 L662,157"/>
+
+  <rect x="214" y="326" width="188" height="70" rx="8" fill="#fff1de" stroke="#e0a33a" stroke-width="1.5"/>
+  <text class="t" x="308" y="346">покрытие атомов</text>
+  <text class="ts" x="308" y="364">все части запроса</text>
+  <text class="ts" x="308" y="380">нашли шаг в плане</text>
+
+  <rect x="458" y="326" width="168" height="70" rx="8" fill="#e8f0fb" stroke="#3a7bd5" stroke-width="1.5"/>
+  <text class="t" x="542" y="346">связывание шагов</text>
+  <text class="ts" x="542" y="364">выход одного шага</text>
+  <text class="ts" x="542" y="380">становится входом</text>
+
+  <rect x="680" y="326" width="150" height="70" rx="8" fill="#e6f3ee" stroke="#2bb673" stroke-width="1.5"/>
+  <text class="t" x="755" y="346">инструменты</text>
+  <text class="ts" x="755" y="364">read-only</text>
+  <text class="ts" x="755" y="380">по белому списку</text>
+
+  <path class="edge" d="M752,202 C752,260 360,258 308,326"/>
+  <path class="edge" d="M402,361 L458,361"/>
+  <path class="edge" d="M626,361 L680,361"/>
+
+  <rect x="36" y="448" width="806" height="48" rx="8" fill="#f3f4f7" stroke="#d8dde6" stroke-width="1.3"/>
+  <text x="58" y="467" font-size="12" font-weight="700" fill="#0f1117">Главное правило:</text>
+  <text x="195" y="467" font-size="12" fill="#34405a">модель дала типизированную анкету, дальше код выбирает карту, собирает шаги и проверяет покрытие.</text>
+  <text x="58" y="484" font-size="12" fill="#34405a">Так план не зависит от свободного текста ответа модели.</text>
+
+  <path d="M755,396 C755,430 755,430 755,448" stroke="#3a7bd5" stroke-width="1.6" fill="none" marker-end="url(#arrB)" stroke-dasharray="5 3"/>
+  <text class="lbl" x="782" y="425" fill="#3a7bd5">запуск</text>
+</svg>

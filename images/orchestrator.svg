@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="600" viewBox="0 0 880 600" font-family="Segoe UI, Roboto, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#5b6472"/>
+    </marker>
+    <marker id="arrB" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#3a7bd5"/>
+    </marker>
+    <marker id="arrR" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#d9534f"/>
+    </marker>
+    <style>
+      .t{font-size:13px;fill:#0f1117;text-anchor:middle;dominant-baseline:middle;font-weight:600}
+      .ts{font-size:11px;fill:#5b6472;text-anchor:middle;dominant-baseline:middle}
+      .edge{stroke:#5b6472;stroke-width:1.6;fill:none;marker-end:url(#arr)}
+      .lbl{font-size:11px;fill:#5b6472;text-anchor:middle}
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="880" height="600" fill="#ffffff"/>
+  <text x="28" y="34" font-size="19" font-weight="700" fill="#0f1117">Оркестратор и навигация по веткам</text>
+  <text x="28" y="56" font-size="12.5" fill="#5b6472">supervisor классифицирует интент, затем правило high-recall поправляет маршрут при доменном сигнале</text>
+
+  <rect x="62" y="120" width="160" height="64" rx="8" fill="#eef0f4" stroke="#c7ccd6" stroke-width="1.5"/>
+  <text class="t" x="142" y="140">запрос + NLU</text>
+  <text class="ts" x="142" y="158">текст, леммы</text>
+  <text class="ts" x="142" y="174">ID, даты, сущности</text>
+
+  <rect x="336" y="112" width="208" height="80" rx="8" fill="#efe9ff" stroke="#7c5cff" stroke-width="1.5"/>
+  <text class="t" x="440" y="132">supervisor</text>
+  <text class="ts" x="440" y="150">LLM-классификация</text>
+  <text class="ts" x="440" y="166">закон, интерфейс, данные</text>
+  <text class="ts" x="440" y="182">уточнение, вне темы</text>
+
+  <rect x="656" y="120" width="158" height="64" rx="8" fill="#e8f0fb" stroke="#3a7bd5" stroke-width="1.5"/>
+  <text class="t" x="735" y="140">intent</text>
+  <text class="ts" x="735" y="158">метка + причина</text>
+  <text class="ts" x="735" y="174">уверенность</text>
+
+  <path class="edge" d="M222,152 L336,152"/>
+  <path class="edge" d="M544,152 L656,152"/>
+
+  <rect x="320" y="260" width="240" height="78" rx="8" fill="#fff7da" stroke="#d8b41e" stroke-width="1.6"/>
+  <text class="t" x="440" y="280">high-recall override</text>
+  <text class="ts" x="440" y="298">есть доменный сигнал - данные</text>
+  <text class="ts" x="440" y="314">уточнение только при дырке</text>
+  <text class="ts" x="440" y="330">в слотах задачи</text>
+
+  <path class="edge" d="M735,184 C735,236 562,250 500,260"/>
+
+  <rect x="42" y="450" width="132" height="52" rx="8" fill="#e6f3ee" stroke="#2bb673" stroke-width="1.5"/>
+  <text class="t" x="108" y="470">закон</text>
+  <text class="ts" x="108" y="486">legal_agent</text>
+
+  <rect x="204" y="450" width="132" height="52" rx="8" fill="#e8f0fb" stroke="#3a7bd5" stroke-width="1.5"/>
+  <text class="t" x="270" y="470">интерфейс</text>
+  <text class="ts" x="270" y="486">interface_agent</text>
+
+  <rect x="366" y="450" width="132" height="52" rx="8" fill="#e6f3ee" stroke="#2bb673" stroke-width="1.5"/>
+  <text class="t" x="432" y="470">данные</text>
+  <text class="ts" x="432" y="486">intent -> plan</text>
+
+  <rect x="528" y="450" width="132" height="52" rx="8" fill="#f3f4f7" stroke="#c7ccd6" stroke-width="1.5"/>
+  <text class="t" x="594" y="470">уточнение</text>
+  <text class="ts" x="594" y="486">clarify</text>
+
+  <rect x="690" y="450" width="132" height="52" rx="8" fill="#fdecec" stroke="#d9534f" stroke-width="1.5"/>
+  <text class="t" x="756" y="470">вне темы</text>
+  <text class="ts" x="756" y="486">refuse</text>
+
+  <path class="edge" d="M392,338 C320,392 164,396 108,450"/>
+  <path class="edge" d="M414,338 C372,396 310,404 270,450"/>
+  <path d="M440,338 L432,450" stroke="#3a7bd5" stroke-width="1.8" fill="none" marker-end="url(#arrB)"/>
+  <path class="edge" d="M466,338 C504,396 558,404 594,450"/>
+  <path d="M492,338 C578,394 704,402 756,450" stroke="#d9534f" stroke-width="1.6" fill="none" marker-end="url(#arrR)" stroke-dasharray="5 3"/>
+
+  <text class="lbl" x="210" y="404">нормы закона</text>
+  <text class="lbl" x="323" y="410">как сделать</text>
+  <text class="lbl" x="452" y="404" fill="#3a7bd5">доменный сигнал</text>
+  <text class="lbl" x="570" y="410">не хватает слота</text>
+  <text class="lbl" x="690" y="404" fill="#d9534f">чужая тема</text>
+</svg>

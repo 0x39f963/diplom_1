@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="473" viewBox="0 0 860 473" font-family="Segoe UI, Roboto, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#5b6472"/>
+    </marker>
+    <style>
+      .h{font-size:13px;fill:#0f1117;font-weight:700}
+      .l{font-size:11.5px;fill:#34405a}
+      .m{font-size:11.5px;font-family:'DejaVu Sans Mono',Consolas,monospace;fill:#2d3a52}
+      .edge{stroke:#5b6472;stroke-width:1.6;fill:none;marker-end:url(#arr)}
+    </style>
+  </defs>
+  <rect x="0" y="0" width="860" height="473" fill="#ffffff"/>
+  <text x="28" y="34" font-size="19" font-weight="700" fill="#0f1117">Механизм: уточнение только по делу</text>
+  <text x="28" y="56" font-size="12.5" fill="#5b6472">запрос «покажи стороны договора CT-1»</text>
+  <rect x="681" y="22" width="151" height="24" rx="12" fill="#fff1de" stroke="#e0a33a" stroke-width="1.3"/>
+  <text x="757" y="34" font-size="11.5" font-weight="700" fill="#34405a" text-anchor="middle" dominant-baseline="middle">класс A+C  ~15 кейсов</text>
+  <rect x="28" y="78" width="372" height="92" rx="8" fill="#fdeaea" stroke="#d9534f" stroke-width="1.5"/>
+  <text class="h" x="44" y="102">Было</text>
+  <text class="l" x="44" y="124">модель перестраховалась: needs_clarification</text>
+  <text class="l" x="44" y="142">агент спрашивает «заказчик или исполнитель?»</text>
+  <text class="l" x="44" y="160">человека гоняют по лишним вопросам</text>
+  <rect x="452" y="78" width="380" height="92" rx="8" fill="#e6f3ee" stroke="#2bb673" stroke-width="1.5"/>
+  <text class="h" x="468" y="102">Стало</text>
+  <text class="l" x="468" y="124">роль не нужна при cardinality=all -&gt; тянем все</text>
+  <text class="l" x="468" y="142">перед clarify пробуем read-план</text>
+  <text class="l" x="468" y="160">план собрался -&gt; отвечаем без вопроса</text>
+  <path class="edge" d="M404,124.0 L448,124.0"/>
+  <rect x="28" y="200" width="372" height="165" rx="8" fill="#f7f8fa" stroke="#dde2ea" stroke-width="1.3"/>
+  <rect x="28" y="200" width="6" height="165" rx="3" fill="#c7ccd6"/>
+  <text x="44" y="221" font-size="11" font-weight="700" fill="#5b6472">вход: фрейм от модели</text>
+  <text class="m" x="44" y="244">{</text>
+  <text class="m" x="44" y="261">  "operation": "list",</text>
+  <text class="m" x="44" y="278">  "target": "ContractParty",</text>
+  <text class="m" x="44" y="295">  "relation": "parties",</text>
+  <text class="m" x="44" y="312">  "cardinality": "all",</text>
+  <text class="m" x="44" y="329">  "needs_clarification": true<tspan fill="#9aa3b2">  // лишнее</tspan></text>
+  <text class="m" x="44" y="346">}</text>
+  <rect x="452" y="200" width="380" height="148" rx="8" fill="#f7f8fa" stroke="#dde2ea" stroke-width="1.3"/>
+  <rect x="452" y="200" width="6" height="148" rx="3" fill="#2bb673"/>
+  <text x="468" y="221" font-size="11" font-weight="700" fill="#5b6472">выход: собранный план</text>
+  <text class="m" x="468" y="244">needs_clarification -&gt; false</text>
+  <text class="m" x="468" y="261">plan = [</text>
+  <text class="m" x="468" y="278">  "get_contract_parties",</text>
+  <text class="m" x="468" y="295">  "get_counterparty",</text>
+  <text class="m" x="468" y="312">  "summarize_answer"</text>
+  <text class="m" x="468" y="329">]</text>
+  <path class="edge" d="M404,282.5 L448,282.5"/>
+  <rect x="28" y="391" width="804" height="58" rx="8" fill="#f3f4f7" stroke="#d8dde6" stroke-width="1.3"/>
+  <text x="48" y="417" font-size="12" font-weight="700" fill="#34405a">Уточнение остается только когда read-план не собирается (нет id при поиске, неизвестна целевая сущность).</text>
+  <text x="48" y="435" font-size="12" font-weight="400" fill="#34405a">Код: planner/compile.py (_ambiguity_reason, _fallback_read_plan), domain/confidence.py.</text>
+</svg>

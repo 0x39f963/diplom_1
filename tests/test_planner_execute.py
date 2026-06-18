@@ -480,10 +480,10 @@ def test_execute_blocks_unknown_tool_without_crashing() -> None:
 
 def test_checklist_blocked_mandatory_awaits_clarification() -> None:
     plan = _plan(
-        "party_lookup",
+        "contract_card",
         [
             TodoItem(
-                id="resolve_party_role",
+                id="get_contract",
                 order=1,
                 status="blocked",
                 blockers=["нет contract_id"],

@@ -31,6 +31,7 @@ _ENDPOINT_TOOLS: dict[str, tuple[str, ...]] = {
         "eva_doc_read",
         "eva_doc_download",
     ),
+    "POST /api/contracts/{id}/documents": ("eva_doc_attach",),
 }
 
 

@@ -82,7 +82,6 @@ CATALOG: dict[str, TodoSpec] = {
         inputs_required=["contract_id"],
         inputs_optional=["role"],
         blockers=["нет contract_id"],
-        tools=["eva_get_contract_parties"],
         output="counterparty_id стороны с ролью customer или executor",
     ),
     "get_counterparty": TodoSpec(
@@ -206,6 +205,7 @@ CATALOG: dict[str, TodoSpec] = {
         title="Приложить документ",
         when="нужно приложить документ к договору",
         inputs_required=["contract_id"],
+        inputs_optional=["doc_id", "doc_type", "file"],
         blockers=["операция записи закрыта гейтом"],
         tools=["eva_doc_attach"],
         output="результат прикрепления документа",
@@ -262,6 +262,7 @@ _AVAILABLE_TOOLS_DEFAULT_ITEMS: tuple[PlanTool, ...] = (
     "retrieve_legal",
     "eva_doc_read",
     "eva_doc_download",
+    "eva_doc_attach",
 )
 AVAILABLE_TOOLS_DEFAULT: frozenset[str] = frozenset(_AVAILABLE_TOOLS_DEFAULT_ITEMS)
 

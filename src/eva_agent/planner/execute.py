@@ -15,7 +15,7 @@ from eva_agent.planner.protocols import PROTOCOLS
 from eva_agent.state import ApiFinding
 from eva_agent.tools.selector import EXECUTION_REGISTRY
 
-_INTERNAL_TODOS = frozenset({"parse_goal", "summarize_answer", "clarify"})
+_INTERNAL_TODOS = frozenset({"parse_goal", "resolve_party_role", "summarize_answer", "clarify"})
 _MIXED_DATA_TODOS = frozenset(
     {
         "get_contract",

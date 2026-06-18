@@ -35,11 +35,11 @@ def test_compile_party_customer_builds_chain_with_role_selector() -> None:
 
     by_id = {item.id: item for item in plan.items}
     assert plan.protocol_id == "party_lookup"
-    assert by_id["resolve_party_role"].tool_calls[0].tool == "eva_get_contract_parties"
+    assert by_id["get_contract_parties"].tool_calls[0].tool == "eva_get_contract_parties"
     assert by_id["resolve_party_role"].inputs["role"] == "customer"
     assert by_id["get_counterparty"].tool_calls[0].tool == "eva_get_counterparty"
     ref = by_id["get_counterparty"].tool_calls[0].args["counterparty_id"]["$from"]
-    assert ref["todo"] == "resolve_party_role"
+    assert ref["todo"] == "get_contract_parties"
     assert ref["selector"] == "role"
     assert ref["selector_value"] == "customer"
     assert by_id["get_counterparty"].depends_on == [2]

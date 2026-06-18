@@ -12,12 +12,19 @@ from eva_agent.planner.catalog import CATALOG
 from eva_agent.planner.protocols import PROTOCOL_CARDS, PROTOCOLS, ProtocolCard
 from eva_agent.planner.validate import validate_plan
 
-_INTERNAL_TODOS = frozenset({"parse_goal", "clarify", "summarize_answer"})
+_INTERNAL_TODOS = frozenset({"parse_goal", "clarify", "resolve_party_role", "summarize_answer"})
 _DATE_HINTS: frozenset[str] = frozenset({"none", "yesterday", "last_week", "last_month"})
 _STATUS_HINTS: frozenset[str] = frozenset({"none", "unsigned", "draft", "registered"})
 TAU_CLARIFY = 0.45
 _WRITE_OPERATIONS = frozenset({"attach", "download"})
-_COMPOSITE_LIMIT = 3
+_COMPOSITE_LIMIT = 5
+_OVERVIEW_DATA_CARDS = frozenset({"unsigned_overview", "readiness_overview"})
+_SEARCH_CARDS = frozenset({"contract_search_filtered", "contract_search_read"})
+_SPECIFIC_RELATIONS = frozenset({"parties", "documents", "placements", "creative"})
+_SPECIFIC_SELECTOR_SLOTS = frozenset(
+    {"contract_id", "creative_id", "doc_id", "counterparty_id", "placement_id"}
+)
+_SPECIFIC_OPERATIONS = frozenset({"compare", "open", "download", "attach"})
 _SLOT_ALIASES: dict[str, str] = {
     "contract": "contract_id",
     "contract_ref": "contract_id",
@@ -70,13 +77,17 @@ def _compile_single_plan(
     frame: PlanningFrame,
     *,
     domain_slice: DomainSlice | None = None,
+    validate: bool = True,
 ) -> TodoPlan:
     if frame.needs_clarification:
-        return _clarify_plan(
-            frame,
-            frame.clarify_reason or "недостаточно входных данных",
-            code=_code_from_reason(frame.clarify_reason),
-        )
+        if _can_compile_global_overview(frame):
+            frame = frame.model_copy(update={"needs_clarification": False, "clarify_reason": ""})
+        else:
+            return _clarify_plan(
+                frame,
+                frame.clarify_reason or "недостаточно входных данных",
+                code=_code_from_reason(frame.clarify_reason),
+            )
     if not frame.target:
         return _clarify_plan(frame, "не определена целевая сущность", code="unknown_target")
     if frame.target not in {card.target for card in PROTOCOL_CARDS}:
@@ -118,8 +129,9 @@ def _compile_single_plan(
 
     plan = _build_plan(frame, selected.card, slots)
     plan.trace.extend(_rank_trace(ranked[:3], selected))
-    plan = validate_plan(plan)
-    _ensure_clarify_code(plan, frame, selected)
+    if validate:
+        plan = validate_plan(plan)
+        _ensure_clarify_code(plan, frame, selected)
     return plan
 
 
@@ -138,9 +150,11 @@ def _compile_composite_plan(
     if len(frames) < 2 or len(frames) > _COMPOSITE_LIMIT:
         return None
     plans: list[TodoPlan] = []
+    parent_slots: dict[str, str] = {}
     for item in frames:
-        subframe = item.model_copy(update={"subtasks": []})
-        plan = _compile_single_plan(subframe, domain_slice=domain_slice)
+        subframe = _canonical_composite_frame(item, parent_slots=parent_slots)
+        parent_slots.update(_slots(subframe))
+        plan = _compile_single_plan(subframe, domain_slice=domain_slice, validate=False)
         if plan.status == "awaiting_clarification" or plan.is_empty:
             return None
         plans.append(plan)
@@ -149,11 +163,62 @@ def _compile_composite_plan(
 
 
 def _composite_frames(frame: PlanningFrame) -> list[PlanningFrame]:
-    subtasks = [item.model_copy(update={"subtasks": []}) for item in frame.subtasks]
+    subtasks = []
+    for item in frame.subtasks:
+        subtasks.extend(_flatten_subtasks(item))
     head = frame.model_copy(update={"subtasks": []})
     if subtasks and _same_task(head, subtasks[0]):
         return subtasks
     return [head, *subtasks]
+
+
+def _flatten_subtasks(frame: PlanningFrame) -> list[PlanningFrame]:
+    current = frame.model_copy(update={"subtasks": []})
+    out = [current]
+    for item in frame.subtasks:
+        out.extend(_flatten_subtasks(item))
+    return out
+
+
+def _canonical_composite_frame(
+    frame: PlanningFrame,
+    *,
+    parent_slots: dict[str, str],
+) -> PlanningFrame:
+    selector = dict(frame.selector)
+    for raw_key, raw_value in list(selector.items()):
+        alias = _SLOT_ALIASES.get(str(raw_key).strip())
+        if alias and alias not in selector:
+            selector[alias] = raw_value
+    for slot, value in parent_slots.items():
+        if slot in _SPECIFIC_SELECTOR_SLOTS and slot not in selector:
+            selector[slot] = value
+
+    operation = "read" if frame.operation == "open" and frame.target == "Contract" else frame.operation
+    cardinality = "all" if frame.cardinality == "n" else frame.cardinality
+    relation = _canonical_relation(frame.target, frame.relation)
+    return frame.model_copy(
+        update={
+            "operation": operation,
+            "cardinality": cardinality,
+            "relation": relation,
+            "selector": selector,
+            "subtasks": [],
+        }
+    )
+
+
+def _canonical_relation(target: str, relation: str | None) -> str | None:
+    normalized = _norm(relation)
+    if target == "ContractParty" and normalized in {"", "contract_id", "entity_id", "contracts"}:
+        return "parties"
+    if target == "Counterparty" and normalized in {"contract_id", "contract_parties", "contracts"}:
+        return "parties"
+    if target == "Document" and normalized in {"", "contract_id", "entity_id", "attachments"}:
+        return "documents"
+    if target in {"Placement", "Creative"} and normalized in {"contract_id", "entity_id"}:
+        return "placements"
+    return relation
 
 
 def _same_task(left: PlanningFrame, right: PlanningFrame) -> bool:
@@ -299,6 +364,8 @@ def _rank_card(
     score += _relation_score(card.relation, frame.relation)
     score += len(covered) * 12
     score -= len(missing) * 10
+    if missing and not slots:
+        score -= len(missing) * 45
 
     if frame.cardinality == "all" and card.operation == "list":
         score += 16
@@ -308,10 +375,54 @@ def _rank_card(
         score += 10
     if "unsigned" in frame.filters.status and card.id == "unsigned_overview":
         score += 18
+    if frame.filters.date_hint != "none" and card.id == "unsigned_overview":
+        score -= 55
     if "missing" in frame.fields and card.id == "missing_documents":
         score += 14
+    if "missing" in frame.fields and card.id == "readiness_overview":
+        score += 40
+    if card.id in _SEARCH_CARDS:
+        score += 45 if _has_search_signal(frame, slots) else -45
+    if card.id in _OVERVIEW_DATA_CARDS and _has_specific_signal(frame, slots):
+        score -= 40
 
     return ProtocolRank(card=card, score=score, covered_slots=covered, missing_slots=missing)
+
+
+def _has_specific_signal(frame: PlanningFrame, slots: dict[str, str]) -> bool:
+    if _norm(frame.relation) in _SPECIFIC_RELATIONS:
+        return True
+    if any(_has_slot(slots, slot) for slot in _SPECIFIC_SELECTOR_SLOTS):
+        return True
+    if frame.operation in _SPECIFIC_OPERATIONS:
+        return True
+    return bool(frame.subtasks)
+
+
+def _has_search_signal(frame: PlanningFrame, slots: dict[str, str]) -> bool:
+    if frame.filters.date_hint != "none":
+        return True
+    if any(_has_slot(slots, key) for key in ("query", "search_query", "name", "title")):
+        return True
+    if frame.cardinality == "one" and not _has_slot(slots, "contract_id"):
+        return any(field in {"status", "latest", "last"} for field in frame.fields)
+    return False
+
+
+def _can_compile_global_overview(frame: PlanningFrame) -> bool:
+    if frame.target != "Contract" or frame.relation:
+        return False
+    if frame.selector or frame.cardinality != "all":
+        return False
+    if frame.operation == "list":
+        return True
+    return _has_overview_scope_signal(frame)
+
+
+def _has_overview_scope_signal(frame: PlanningFrame) -> bool:
+    if frame.filters.date_hint != "none" or frame.filters.status:
+        return True
+    return any(field in {"missing", "readiness", "ready", "status"} for field in frame.fields)
 
 
 def _operation_score(operation: str, frame: PlanningFrame) -> int:
@@ -506,7 +617,7 @@ def _build_item(
                 PlanStep(
                     order=step_order,
                     tool=tool,
-                    args=_tool_args(todo_id, inputs),
+                    args=_tool_args(todo_id, inputs, frame=frame, card=card, slots=slots),
                     date_hint=_date_hint(frame),
                     status_hint=_status_hint(frame),
                     reason=f"compiled:{card.id}:{todo_id}",
@@ -535,17 +646,88 @@ def _todo_inputs(todo_id: str, frame: PlanningFrame, slots: dict[str, str]) -> d
     inputs: dict[str, Any] = {key: slots[key] for key in allowed if _has_slot(slots, key)}
     if todo_id == "resolve_party_role" and _has_slot(slots, "role"):
         inputs["role"] = slots["role"]
+    if todo_id == "search_contracts":
+        inputs["query"] = _search_query(frame, slots)
     if _needs_fan_out(todo_id, frame):
         inputs["fan_out"] = True
     return inputs
 
 
-def _tool_args(todo_id: str, inputs: dict[str, Any]) -> dict[str, Any]:
+def _tool_args(
+    todo_id: str,
+    inputs: dict[str, Any],
+    *,
+    frame: PlanningFrame,
+    card: ProtocolCard,
+    slots: dict[str, str],
+) -> dict[str, Any]:
     spec = CATALOG.get(todo_id)
     if spec is None:
         return {}
     allowed = set(spec.inputs_required + spec.inputs_optional)
-    return {key: value for key, value in inputs.items() if key in allowed}
+    args = {key: value for key, value in inputs.items() if key in allowed}
+    if todo_id == "search_contracts" and "query" in args:
+        return {"q": args["query"]}
+    if todo_id == "attach_document":
+        args.setdefault("file", _attachment_file_arg(inputs))
+    if todo_id == "get_counterparty" and "counterparty_id" not in args:
+        ref = _counterparty_ref(frame, card, slots)
+        if ref:
+            args["counterparty_id"] = {"$from": ref}
+    return args
+
+
+def _attachment_file_arg(inputs: dict[str, Any]) -> dict[str, str]:
+    doc_id = str(inputs.get("doc_id") or "document").strip() or "document"
+    doc_type = str(inputs.get("doc_type") or "annex").strip() or "annex"
+    return {
+        "file_name": f"{doc_id}.txt",
+        "content_b64": "",
+        "mime_type": "text/plain",
+        "doc_type": doc_type,
+    }
+
+
+def _counterparty_ref(
+    frame: PlanningFrame,
+    card: ProtocolCard,
+    slots: dict[str, str],
+) -> dict[str, Any]:
+    if "get_contract_parties" not in _todo_template(card):
+        return {}
+    ref: dict[str, Any] = {
+        "todo": "get_contract_parties",
+        "path": "parties[].counterparty_id",
+        "selector": "role",
+        "cardinality": "many",
+    }
+    if _has_slot(slots, "role"):
+        ref["selector_value"] = slots["role"]
+    elif frame.cardinality in {"all", "n"}:
+        ref["fan_out"] = True
+    return ref
+
+
+def _search_query(frame: PlanningFrame, slots: dict[str, str]) -> str:
+    for key in ("query", "search_query", "name", "title"):
+        if _has_slot(slots, key):
+            return slots[key]
+    if _has_slot(slots, "contract_id") and not slots["contract_id"].startswith("CT-"):
+        return slots["contract_id"]
+
+    parts: list[str] = []
+    if frame.filters.date_hint == "yesterday":
+        parts.append("вчера")
+    elif frame.filters.date_hint == "last_week":
+        parts.append("за последнюю неделю")
+    elif frame.filters.date_hint == "last_month":
+        parts.append("за последний месяц")
+    if "unsigned" in frame.filters.status:
+        parts.append("неподписанные")
+    if any(field in {"latest", "last", "status"} for field in frame.fields):
+        parts.append("последний")
+    parts.append("договор")
+    return " ".join(parts)
 
 
 def _is_dependent(todo_id: str, card: ProtocolCard) -> bool:
@@ -553,8 +735,10 @@ def _is_dependent(todo_id: str, card: ProtocolCard) -> bool:
 
 
 def _depends_on(todo_id: str, card: ProtocolCard) -> list[int]:
-    if todo_id == "get_counterparty" and "resolve_party_role" in card.todo_template:
-        return [_todo_order(card, "resolve_party_role")]
+    if todo_id == "resolve_party_role" and "get_contract_parties" in card.todo_template:
+        return [_todo_order(card, "get_contract_parties")]
+    if todo_id == "get_counterparty" and "get_contract_parties" in card.todo_template:
+        return [_todo_order(card, "get_contract_parties")]
     if todo_id == "get_contract" and "get_creative_status" in card.todo_template:
         return [_todo_order(card, "get_creative_status")]
     return []
@@ -568,7 +752,10 @@ def _todo_order(card: ProtocolCard, todo_id: str) -> int:
 
 
 def _needs_fan_out(todo_id: str, frame: PlanningFrame) -> bool:
-    return todo_id == "get_counterparty" and frame.cardinality in {"all", "n"}
+    return todo_id in {"get_counterparty", "list_placements", "list_documents"} and frame.cardinality in {
+        "all",
+        "n",
+    }
 
 
 def _date_hint(frame: PlanningFrame) -> DateHint:

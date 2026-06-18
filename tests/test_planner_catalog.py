@@ -16,7 +16,7 @@ def test_available_todo_ids_is_not_empty() -> None:
     assert available_todo_ids()
 
 
-def test_attach_document_is_not_enabled_by_default() -> None:
-    assert "eva_doc_attach" not in AVAILABLE_TOOLS_DEFAULT
+def test_attach_document_is_enabled_for_write_gate() -> None:
+    assert "eva_doc_attach" in AVAILABLE_TOOLS_DEFAULT
     assert "eva_doc_read" in AVAILABLE_TOOLS_DEFAULT
     assert "eva_doc_download" in AVAILABLE_TOOLS_DEFAULT

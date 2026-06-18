@@ -32,7 +32,7 @@ def test_validate_frame_reports_syntax_semantics_and_compile_levels() -> None:
     assert any(issue.level == "syntax" and issue.code == "bad_operation" for issue in syntax.issues)
     assert syntax.ok is False
 
-    semantics = validate_frame(_frame(relation="parties"), domain_map=domain_map)
+    semantics = validate_frame(_frame(relation="unknown_relation"), domain_map=domain_map)
     assert any(issue.level == "semantics" and issue.code == "bad_relation" for issue in semantics.issues)
     assert semantics.ok is False
 

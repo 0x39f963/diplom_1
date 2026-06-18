@@ -182,7 +182,8 @@
       "tools": [
         "eva_list_contract_documents",
         "eva_doc_read",
-        "eva_doc_download"
+        "eva_doc_download",
+        "eva_doc_attach"
       ]
     },
     "Placement": {
@@ -240,9 +241,69 @@
     {
       "cardinality": "one",
       "selector": null,
+      "source_entity": "Creative",
+      "source_path": "contract_id",
+      "source_tool": "eva_get_creative_status",
+      "target_arg": "contract_id",
+      "target_entity": "Document",
+      "target_tool": "eva_list_contract_documents"
+    },
+    {
+      "cardinality": "one",
+      "selector": null,
+      "source_entity": "Contract",
+      "source_path": "contracts[].id",
+      "source_tool": "eva_search_contracts",
+      "target_arg": "contract_id",
+      "target_entity": "Contract",
+      "target_tool": "eva_get_contract"
+    },
+    {
+      "cardinality": "one",
+      "selector": null,
       "source_entity": "Contract",
       "source_path": "id",
       "source_tool": "eva_get_contract",
+      "target_arg": "contract_id",
+      "target_entity": "ContractParty",
+      "target_tool": "eva_get_contract_parties"
+    },
+    {
+      "cardinality": "many",
+      "selector": null,
+      "source_entity": "Contract",
+      "source_path": "contracts[].id",
+      "source_tool": "eva_search_contracts",
+      "target_arg": "contract_id",
+      "target_entity": "ContractParty",
+      "target_tool": "eva_get_contract_parties"
+    },
+    {
+      "cardinality": "one",
+      "selector": null,
+      "source_entity": "Contract",
+      "source_path": "id",
+      "source_tool": "eva_get_contract",
+      "target_arg": "contract_id",
+      "target_entity": "Placement",
+      "target_tool": "eva_list_placements"
+    },
+    {
+      "cardinality": "many",
+      "selector": null,
+      "source_entity": "Contract",
+      "source_path": "contracts[].id",
+      "source_tool": "eva_search_contracts",
+      "target_arg": "contract_id",
+      "target_entity": "Placement",
+      "target_tool": "eva_list_placements"
+    },
+    {
+      "cardinality": "many",
+      "selector": null,
+      "source_entity": "Contract",
+      "source_path": "contracts[].id",
+      "source_tool": "eva_list_unsigned_contracts",
       "target_arg": "contract_id",
       "target_entity": "Placement",
       "target_tool": "eva_list_placements"
@@ -253,6 +314,16 @@
       "source_entity": "Contract",
       "source_path": "id",
       "source_tool": "eva_get_contract",
+      "target_arg": "contract_id",
+      "target_entity": "Document",
+      "target_tool": "eva_list_contract_documents"
+    },
+    {
+      "cardinality": "many",
+      "selector": null,
+      "source_entity": "Contract",
+      "source_path": "contracts[].id",
+      "source_tool": "eva_search_contracts",
       "target_arg": "contract_id",
       "target_entity": "Document",
       "target_tool": "eva_list_contract_documents"

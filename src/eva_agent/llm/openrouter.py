@@ -6,6 +6,7 @@ provider-pin; глушение qwen3-thinking (иначе 11-54 с/вызов); 
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
@@ -49,8 +50,16 @@ class OpenRouterClient(LLMClient):
         # usage.include=true - OpenRouter возвращает фактическую стоимость вызова в usage.cost
         # (нужно для cost-метрик eval; без него часть моделей cost не отдает).
         extra: dict[str, Any] = {"usage": {"include": True}}
+        provider: dict[str, Any] = {}
+        provider_sort = os.getenv("OPENROUTER_PROVIDER_SORT", "latency").strip().lower()
+        if provider_sort:
+            provider["sort"] = provider_sort
         if self._provider_only:
-            extra["provider"] = {"only": [self._provider_only], "allow_fallbacks": False}
+            strict = os.getenv("OPENROUTER_PROVIDER_STRICT", "").strip().lower()
+            provider["only"] = [self._provider_only]
+            provider["allow_fallbacks"] = strict not in {"1", "true", "yes", "on"}
+        if provider:
+            extra["provider"] = provider
         # Глушим qwen3-thinking по умолчанию (вернуть - thinking=True).
         if "qwen3" in self.model.lower() and not self._thinking:
             extra["chat_template_kwargs"] = {"enable_thinking": False}
@@ -91,14 +100,14 @@ class OpenRouterClient(LLMClient):
                 return self._to_response(resp, time.monotonic() - started, retry_log)
             except (APIConnectionError, APITimeoutError) as exc:
                 retry_log.append(f"attempt {attempt}: network {type(exc).__name__}")
+                if attempt == self._max_retries:
+                    raise
             except APIStatusError as exc:
                 if exc.status_code not in _RETRYABLE_STATUS or attempt == self._max_retries:
                     raise
                 retry_log.append(f"attempt {attempt}: status {exc.status_code}")
                 self._sleep(getattr(exc, "response", None), attempt)
                 continue
-            if attempt == self._max_retries:
-                raise
             self._sleep(None, attempt)
         raise RuntimeError("unreachable")
 

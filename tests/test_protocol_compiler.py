@@ -146,6 +146,89 @@ def test_high_confidence_compiled_plan_does_not_clarify() -> None:
     assert plan.clarify_code == ""
 
 
+def test_contract_number_card_uses_search_as_resolver() -> None:
+    plan = compile_plan(
+        _frame(
+            target="Contract",
+            selector={"contract_id": "Д-2025/249"},
+            output="card",
+        )
+    )
+
+    by_id = {item.id: item for item in plan.items}
+    tools = [step.tool for item in plan.items for step in item.tool_calls]
+
+    assert plan.status == "in_progress"
+    assert plan.protocol_id == "contract_card"
+    assert plan.strategy == "compiled:contract_card_via_search"
+    assert tools == ["eva_search_contracts", "eva_get_contract"]
+    assert by_id["get_contract"].depends_on == [2]
+    ref = by_id["get_contract"].tool_calls[0].args["contract_id"]["$from"]
+    assert ref == {
+        "todo": "search_contracts",
+        "path": "contracts[].id",
+        "cardinality": "one",
+    }
+
+
+def test_search_party_role_uses_resolver_then_parties() -> None:
+    plan = compile_plan(
+        _frame(
+            operation="list",
+            target="ContractParty",
+            relation="parties",
+            fields=["search"],
+            cardinality="one",
+            selector={"role": "executor", "search_query": "найди договор с площадкой"},
+            output="list",
+        )
+    )
+
+    by_id = {item.id: item for item in plan.items}
+    tools = [step.tool for item in plan.items for step in item.tool_calls]
+
+    assert plan.status == "in_progress"
+    assert plan.protocol_id == "party_lookup"
+    assert tools[:2] == ["eva_search_contracts", "eva_get_contract_parties"]
+    assert by_id["get_contract_parties"].depends_on == [2]
+    assert by_id["resolve_party_role"].inputs["role"] == "executor"
+    ref = by_id["get_contract_parties"].tool_calls[0].args["contract_id"]["$from"]
+    assert ref["todo"] == "search_contracts"
+    assert ref["cardinality"] == "one"
+
+
+def test_known_contract_id_does_not_use_search_resolver() -> None:
+    plan = compile_plan(_frame(selector={"contract_id": "CT-1"}, output="card"))
+
+    tools = [step.tool for item in plan.items for step in item.tool_calls]
+    assert tools == ["eva_get_contract"]
+    assert plan.strategy == "compiled:contract_card"
+
+
+def test_mixed_legal_placements_adds_retrieve_legal_to_data_plan() -> None:
+    plan = compile_plan(
+        _frame(
+            operation="list",
+            target="Placement",
+            relation="placements",
+            fields=["legal_signal"],
+            cardinality="all",
+            selector={"contract_id": "CT-1", "legal_query": "маркировка рекламы erid"},
+            output="list",
+        )
+    )
+
+    by_id = {item.id: item for item in plan.items}
+    tools = [step.tool for item in plan.items for step in item.tool_calls]
+
+    assert plan.status == "in_progress"
+    assert plan.protocol_id == "placement_list"
+    assert "eva_list_placements" in tools
+    assert "retrieve_legal" in tools
+    assert by_id["legal_lookup"].depends_on == []
+    assert by_id["legal_lookup"].tool_calls[0].args["query"] == "маркировка рекламы erid"
+
+
 def test_low_confidence_with_explicit_id_compiles() -> None:
     plan = compile_plan(_frame(selector={"contract_id": "CT-1"}, confidence=0.2))
 

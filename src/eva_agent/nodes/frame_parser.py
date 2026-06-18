@@ -14,7 +14,7 @@ from eva_agent.domain.frame_normalize import normalize_frame, relation_implies_t
 from eva_agent.domain.frame_validate import FrameValidation, validate_frame
 from eva_agent.llm.config import get_client
 from eva_agent.nlu.fewshot import Example, retrieve_examples
-from eva_agent.nlu.preprocess import NluFeatures, preprocess
+from eva_agent.nlu.preprocess import NluFeatures, has_legal_signal, preprocess
 from eva_agent.planner.compile import rank_protocol_cards
 from eva_agent.state import AgentState
 from eva_agent.tools.build_domain_map import load_domain_map
@@ -69,6 +69,7 @@ def intent_frame_parser(state: AgentState) -> dict[str, Any]:
             frame = _merge_deterministic_hints(frame, draft, domain_map)
             frame = normalize_frame(frame, nlu, domain_map)
             frame = _apply_decomposition(query, nlu, frame, domain_map)
+            frame = _with_legal_signal(query, nlu, frame, state)
             validation = validate_frame(frame, domain_map=domain_map, draft=draft)
             last_validation = validation
             if validation.ok:
@@ -99,6 +100,7 @@ def intent_frame_parser(state: AgentState) -> dict[str, Any]:
     )
     frame = normalize_frame(frame, nlu, domain_map)
     frame = _apply_decomposition(query, nlu, frame, domain_map)
+    frame = _with_legal_signal(query, nlu, frame, state)
     frame = _with_composite_confidence(frame, draft, nlu, domain_map)
     return _frame_result(frame, state=state, domain_map=domain_map)
 
@@ -291,6 +293,36 @@ def _apply_decomposition(
     )
 
 
+def _with_legal_signal(
+    query: str,
+    nlu: NluFeatures,
+    frame: PlanningFrame,
+    state: AgentState,
+) -> PlanningFrame:
+    if state.intent is None or state.intent.kind != "mixed_diagnostic":
+        return frame
+    if not has_legal_signal(query, nlu):
+        return frame
+    selector = dict(frame.selector)
+    selector.setdefault("legal_query", _legal_topic(query, nlu))
+    fields = _unique([*frame.fields, "legal_signal"])
+    trace = _unique([*frame.trace, "frame legal signal: additive"])
+    return frame.model_copy(update={"selector": selector, "fields": fields, "trace": trace})
+
+
+def _legal_topic(query: str, nlu: NluFeatures) -> str:
+    lowered = query.lower().replace("\u0451", "е")
+    if "маркиров" in lowered or "erid" in lowered:
+        return "маркировка рекламы erid"
+    if "самореклам" in lowered:
+        return "самореклама"
+    if "документ" in lowered or "акт" in lowered or "приложен" in lowered:
+        return "документы по договору 38-ФЗ"
+    if "сторон" in lowered or nlu.roles:
+        return "обязанности сторон по 38-ФЗ"
+    return query.strip() or "38-ФЗ"
+
+
 def decompose_query(
     query: str,
     *,
@@ -437,8 +469,11 @@ def _selector_from_nlu(nlu: NluFeatures) -> dict[str, str]:
     _put_first(selector, "doc_id", ids.get("documents"))
     _put_first(selector, "placement_id", ids.get("placements"))
     _put_first(selector, "contract_id", ids.get("contract_numbers"))
+    _put_first(selector, "contract_number", ids.get("contract_numbers"))
     _put_first(selector, "counterparty_hint", ids.get("counterparty_hints"))
     _put_first(selector, "role", nlu.roles)
+    if "search" in nlu.action_verbs and "contract_id" not in selector:
+        selector["search_query"] = nlu.query
     return selector
 
 
@@ -551,6 +586,12 @@ def _fields_from_nlu(query: str, nlu: NluFeatures) -> list[str]:
         fields.append("inn")
     if "не хватает" in lowered:
         fields.append("missing")
+    if "хватает" in lowered and "документ" in lowered:
+        fields.append("missing")
+    if "search" in nlu.action_verbs:
+        fields.append("search")
+    if "последн" in lowered:
+        fields.append("latest")
     if "форма" in lowered:
         fields.append("distribution_form")
     return _unique(fields)

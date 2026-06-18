@@ -158,6 +158,55 @@ def test_intent_frame_parser_infers_documents_relation_from_nlu(monkeypatch: Any
     assert frame.selector["contract_id"] == "CT-2"
 
 
+def test_intent_frame_parser_marks_mixed_legal_as_additive(monkeypatch: Any) -> None:
+    client = _FrameClient(
+        [
+            _base_frame(
+                operation="list",
+                target="Placement",
+                relation="placements",
+                cardinality="all",
+                output="list",
+            )
+        ]
+    )
+    monkeypatch.setattr(frame_parser, "get_client", lambda role: client)
+    monkeypatch.setattr(frame_parser, "retrieve_examples", lambda query, k=5: [])
+
+    result = frame_parser.intent_frame_parser(
+        AgentState(
+            user_input_raw="Нужна ли маркировка для размещений CT-1, покажи размещения",
+            intent=Intent(kind="mixed_diagnostic", confidence=0.9),
+            nlu=preprocess("Нужна ли маркировка для размещений CT-1, покажи размещения"),
+        )
+    )
+
+    frame = result["frame"]
+    assert "legal_signal" in frame.fields
+    assert frame.selector["legal_query"] == "маркировка рекламы erid"
+    assert frame.selector["contract_id"] == "CT-1"
+
+
+def test_intent_frame_parser_keeps_pure_legal_without_additive_marker(
+    monkeypatch: Any,
+) -> None:
+    client = _FrameClient([_base_frame(target="Contract")])
+    monkeypatch.setattr(frame_parser, "get_client", lambda role: client)
+    monkeypatch.setattr(frame_parser, "retrieve_examples", lambda query, k=5: [])
+
+    result = frame_parser.intent_frame_parser(
+        AgentState(
+            user_input_raw="что говорит закон о маркировке рекламы",
+            intent=Intent(kind="legal_consult", confidence=0.9),
+            nlu=preprocess("что говорит закон о маркировке рекламы"),
+        )
+    )
+
+    frame = result["frame"]
+    assert "legal_signal" not in frame.fields
+    assert "legal_query" not in frame.selector
+
+
 def test_intent_frame_parser_retries_once_and_returns_clarify_frame(monkeypatch: Any) -> None:
     class BrokenClient:
         calls = 0

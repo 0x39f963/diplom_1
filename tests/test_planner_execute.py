@@ -3,8 +3,10 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from eva_agent.domain.frame import PlanningFrame
 from eva_agent.domain.plan import PlanStep, TodoItem, TodoPlan
 from eva_agent.planner import execute as execute_module
+from eva_agent.planner.compile import compile_plan
 from eva_agent.planner.execute import _apply_checklist, execute_plan
 from eva_agent.planner.filters import apply_filters
 from eva_agent.planner.validate import validate_plan
@@ -19,6 +21,25 @@ def _plan(protocol_id: str, items: list[TodoItem]) -> TodoPlan:
         status="in_progress",
         confidence=0.9,
     )
+
+
+def _frame(**updates: Any) -> PlanningFrame:
+    payload = {
+        "operation": "read",
+        "target": "Contract",
+        "relation": None,
+        "fields": [],
+        "filters": {"date_hint": "none", "status": []},
+        "cardinality": "one",
+        "selector": {},
+        "output": "summary",
+        "subtasks": [],
+        "needs_clarification": False,
+        "clarify_reason": "",
+        "confidence": 0.9,
+    }
+    payload.update(updates)
+    return PlanningFrame.model_validate(payload)
 
 
 def test_execute_resolves_from_chain_to_counterparty() -> None:
@@ -107,6 +128,42 @@ def test_execute_auto_wires_creative_to_contract() -> None:
     assert executed.items[1].status == "done"
     assert executed.status == "answered"
     assert any("auto-wire eva_get_contract.contract_id" in event for event in executed.trace)
+
+
+def test_execute_search_resolver_clarifies_after_ambiguous_search(monkeypatch: Any) -> None:
+    contract_calls: list[str] = []
+
+    def fake_search(q: str) -> ApiFinding:
+        return ApiFinding(
+            tool="eva_search_contracts",
+            args={"q": q},
+            data={"contracts": [{"id": "CT-1"}, {"id": "CT-2"}], "count": 2},
+        )
+
+    def fake_contract(contract_id: str) -> ApiFinding:
+        contract_calls.append(contract_id)
+        return ApiFinding(
+            tool="eva_get_contract",
+            args={"contract_id": contract_id},
+            data={"id": contract_id},
+        )
+
+    monkeypatch.setitem(execute_module.EXECUTION_REGISTRY, "eva_search_contracts", fake_search)
+    monkeypatch.setitem(execute_module.EXECUTION_REGISTRY, "eva_get_contract", fake_contract)
+    plan = compile_plan(
+        _frame(
+            target="Contract",
+            selector={"contract_id": "Д-2025/249"},
+            output="card",
+        )
+    )
+
+    findings, executed = execute_plan(plan)
+
+    assert [finding.tool for finding in findings] == ["eva_search_contracts"]
+    assert contract_calls == []
+    assert executed.status == "awaiting_clarification"
+    assert "ambiguous auto-wire: contract_id" in executed.items[2].blockers
 
 
 def test_execute_selector_value_picks_one_counterparty() -> None:

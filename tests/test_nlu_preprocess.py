@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from eva_agent.nlu.preprocess import is_read_only_domain_command, preprocess
+from eva_agent.nlu.preprocess import has_legal_signal, is_read_only_domain_command, preprocess
 
 
 def test_preprocess_extracts_lemmas_and_entities() -> None:
@@ -46,3 +46,11 @@ def test_read_only_domain_command_rejects_write_verbs() -> None:
     assert not is_read_only_domain_command("Приложи документ DOC-3 к договору CT-2")
     assert not is_read_only_domain_command("Удали документ DOC-1")
     assert not is_read_only_domain_command("Отправь договор CT-1 наружу")
+
+
+def test_has_legal_signal_matches_law_markers() -> None:
+    features = preprocess("Нужна ли маркировка для размещений CT-1")
+
+    assert has_legal_signal(features)
+    assert has_legal_signal("что требует 38-ФЗ по документам")
+    assert not has_legal_signal("покажи карточку договора CT-1")

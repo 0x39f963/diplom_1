@@ -65,6 +65,41 @@ _WRITE_TEXT_MARKERS = (
     "убери",
     "убрать",
 )
+_LEGAL_TEXT_MARKERS = (
+    "38-фз",
+    "38 фз",
+    "закон",
+    "норм",
+    "маркировк",
+    "обязан",
+    "нужно ли",
+    "нужна ли",
+    "нужен ли",
+    "нарушаю",
+    "нарушает",
+    "требует",
+    "требован",
+    "erid",
+    "самореклам",
+    "реклам",
+)
+_LEGAL_LEMMAS = frozenset(
+    {
+        "закон",
+        "норма",
+        "нормативный",
+        "статья",
+        "маркировка",
+        "обязать",
+        "обязан",
+        "нужный",
+        "нарушать",
+        "требовать",
+        "требование",
+        "самореклама",
+        "реклама",
+    }
+)
 
 
 class DateFeature(BaseModel):
@@ -119,6 +154,22 @@ def is_read_only_domain_command(query: str) -> bool:
     if actions & _READ_ACTIONS:
         return True
     return bool(extract_refs(query).all_ids)
+
+
+def has_legal_signal(query: str | NluFeatures, nlu: NluFeatures | None = None) -> bool:
+    """Detect a law/norm marker in raw text or preprocessed features."""
+
+    if isinstance(query, NluFeatures):
+        features: NluFeatures | None = query
+        text = query.query
+    else:
+        features = nlu
+        text = str(query or "")
+    lowered = _norm_text(text)
+    if any(marker in lowered for marker in _LEGAL_TEXT_MARKERS):
+        return True
+    lemmas = set(features.lemmas) if features is not None else set(lemmatize_tokens(tokenize(text)))
+    return bool(lemmas & _LEGAL_LEMMAS)
 
 
 def _refs_to_dict(refs: EntityRefs) -> dict[str, list[str]]:

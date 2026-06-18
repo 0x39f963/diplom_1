@@ -20,11 +20,13 @@ _WRITE_OPERATIONS = frozenset({"attach", "download"})
 _COMPOSITE_LIMIT = 5
 _OVERVIEW_DATA_CARDS = frozenset({"unsigned_overview", "readiness_overview"})
 _SEARCH_CARDS = frozenset({"contract_search_filtered", "contract_search_read"})
+_RESOLVER_SKIP_CARDS = _SEARCH_CARDS | _OVERVIEW_DATA_CARDS
 _SPECIFIC_RELATIONS = frozenset({"parties", "documents", "placements", "creative"})
 _SPECIFIC_SELECTOR_SLOTS = frozenset(
     {"contract_id", "creative_id", "doc_id", "counterparty_id", "placement_id"}
 )
 _SPECIFIC_OPERATIONS = frozenset({"compare", "open", "download", "attach"})
+_LEGAL_FIELDS = frozenset({"legal", "legal_signal", "law", "norm"})
 _SLOT_ALIASES: dict[str, str] = {
     "contract": "contract_id",
     "contract_ref": "contract_id",
@@ -150,7 +152,16 @@ def _compile_resolved_plan(
             return _clarify_plan(frame, "низкая уверенность разбора", code="low_confidence")
         low_confidence_overridden = True
 
-    plan = _build_plan(frame, selected.card, slots)
+    resolver_card = _search_resolver_target_card(
+        frame,
+        slots,
+        domain_slice=domain_slice,
+    )
+    if resolver_card is not None:
+        plan = _build_search_resolver_plan(frame, resolver_card, slots)
+    else:
+        plan = _build_plan(frame, selected.card, slots)
+    plan = _with_additive_legal_step(plan, frame, slots)
     if low_confidence_overridden:
         plan.confidence = max(plan.confidence, TAU_CLARIFY)
         plan.trace.append("clarify overridden: low confidence with domain signal")
@@ -223,6 +234,19 @@ def _has_domain_plan_signal(frame: PlanningFrame, slots: dict[str, str]) -> bool
     if _has_search_signal(frame, slots):
         return True
     return frame.operation == "list" and frame.cardinality == "all"
+
+
+def _has_known_contract_id(slots: dict[str, str]) -> bool:
+    return _has_slot(slots, "contract_id") and _is_internal_contract_id(slots["contract_id"])
+
+
+def _is_internal_contract_id(value: str) -> bool:
+    clean = str(value).strip().upper()
+    return clean.startswith("CT-") or clean.isdigit()
+
+
+def _has_external_contract_ref(slots: dict[str, str]) -> bool:
+    return _has_slot(slots, "contract_id") and not _is_internal_contract_id(slots["contract_id"])
 
 
 def _has_explicit_selector(slots: dict[str, str]) -> bool:
@@ -536,9 +560,13 @@ def _has_specific_signal(frame: PlanningFrame, slots: dict[str, str]) -> bool:
 
 
 def _has_search_signal(frame: PlanningFrame, slots: dict[str, str]) -> bool:
+    if _has_external_contract_ref(slots):
+        return True
     if frame.filters.date_hint != "none":
         return True
     if any(_has_slot(slots, key) for key in ("query", "search_query", "name", "title")):
+        return True
+    if any(field in {"search", "latest", "last"} for field in frame.fields):
         return True
     if frame.cardinality == "one" and not _has_slot(slots, "contract_id"):
         return any(field in {"status", "latest", "last"} for field in frame.fields)
@@ -633,6 +661,133 @@ def _missing_write_slot(frame: PlanningFrame, selected: ProtocolRank) -> str:
     return ""
 
 
+def _search_resolver_target_card(
+    frame: PlanningFrame,
+    slots: dict[str, str],
+    *,
+    domain_slice: DomainSlice | None,
+) -> ProtocolCard | None:
+    if _has_known_contract_id(slots):
+        return None
+    if not (_has_external_contract_ref(slots) or _has_search_signal(frame, slots)):
+        return None
+    target_frame = _search_resolver_target_frame(frame)
+    if target_frame is None:
+        return None
+    ranked = rank_protocol_cards(
+        target_frame,
+        domain_slice=domain_slice,
+        cards=tuple(card for card in PROTOCOL_CARDS if card.id not in _RESOLVER_SKIP_CARDS),
+    )
+    for item in ranked:
+        if item.score <= 0:
+            continue
+        if "contract_id" not in item.card.required_slots:
+            continue
+        return item.card
+    return None
+
+
+def _search_resolver_target_frame(frame: PlanningFrame) -> PlanningFrame | None:
+    relation = _norm(frame.relation)
+    selector = dict(frame.selector)
+    selector["contract_id"] = "CT-RESOLVED"
+    updates: dict[str, Any] = {"selector": selector, "needs_clarification": False}
+
+    if relation == "parties":
+        updates.update(
+            {
+                "operation": "read" if selector.get("role") else "list",
+                "target": "ContractParty",
+                "cardinality": "one" if selector.get("role") else "all",
+                "output": "card" if selector.get("role") else "list",
+            }
+        )
+    elif relation == "documents":
+        updates.update({"operation": "list", "target": "Document", "cardinality": "all", "output": "list"})
+    elif relation == "placements":
+        target = "Creative" if frame.target == "Creative" else "Placement"
+        updates.update({"operation": "list", "target": target, "cardinality": "all", "output": "list"})
+    elif relation == "creative":
+        return None
+    elif frame.target == "Contract":
+        if frame.cardinality == "all" and frame.output == "list":
+            return None
+        updates.update({"operation": "read", "cardinality": "one", "output": "card"})
+    else:
+        return None
+    return frame.model_copy(update=updates)
+
+
+def _build_search_resolver_plan(
+    frame: PlanningFrame,
+    target_card: ProtocolCard,
+    slots: dict[str, str],
+) -> TodoPlan:
+    target_todos = [
+        todo_id
+        for todo_id in _todo_template(target_card)
+        if todo_id not in {"parse_goal", "summarize_answer", "search_contracts"}
+    ]
+    resolver_card = target_card.model_copy(
+        update={
+            "id": f"{target_card.id}_via_search",
+            "todo_template": ["parse_goal", "search_contracts", *target_todos, "summarize_answer"],
+        }
+    )
+    target_slots = dict(slots)
+    target_slots.pop("contract_id", None)
+
+    items: list[TodoItem] = []
+    step_order = 1
+    for todo_order, todo_id in enumerate(_todo_template(resolver_card), start=1):
+        item_slots = slots if todo_id == "search_contracts" else target_slots
+        item, step_order = _build_item(
+            todo_id,
+            todo_order=todo_order,
+            step_order=step_order,
+            frame=frame,
+            card=resolver_card,
+            slots=item_slots,
+        )
+        if todo_id != "search_contracts":
+            _wire_contract_from_search(item)
+        items.append(item)
+
+    return TodoPlan(
+        goal=_goal(frame),
+        protocol_id=target_card.protocol_id,
+        strategy=f"compiled:{resolver_card.id}",
+        items=items,
+        status="in_progress",
+        confidence=max(0.0, min(1.0, frame.confidence)),
+        trace=[f"compiler selected {resolver_card.id}", "compiler resolver search_contracts"],
+    )
+
+
+def _wire_contract_from_search(item: TodoItem) -> None:
+    spec = CATALOG.get(item.id)
+    if spec is None or "contract_id" not in set(spec.inputs_required + spec.inputs_optional):
+        return
+    ref = _search_contract_ref()
+    item.inputs.setdefault("contract_id", ref)
+    for step in item.tool_calls:
+        step.args.setdefault("contract_id", _search_contract_ref())
+    if 2 not in item.depends_on:
+        item.depends_on.append(2)
+    item.type = "dependent"
+
+
+def _search_contract_ref() -> dict[str, Any]:
+    return {
+        "$from": {
+            "todo": "search_contracts",
+            "path": "contracts[].id",
+            "cardinality": "one",
+        }
+    }
+
+
 def _fallback_read_plan(
     frame: PlanningFrame,
     *,
@@ -659,6 +814,7 @@ def _fallback_read_plan(
         if any(not _has_slot(slots, slot) for slot in selected.card.required_slots):
             continue
         plan = _build_plan(candidate, selected.card, slots)
+        plan = _with_additive_legal_step(plan, frame, slots)
         plan.trace.append("compiler fallback: minimal read")
         if plan.confidence < TAU_CLARIFY and _has_domain_plan_signal(candidate, slots):
             plan.confidence = max(plan.confidence, TAU_CLARIFY)
@@ -718,6 +874,75 @@ def _build_plan(frame: PlanningFrame, card: ProtocolCard, slots: dict[str, str])
         confidence=max(0.0, min(1.0, frame.confidence)),
         trace=[f"compiler selected {card.id}"],
     )
+
+
+def _with_additive_legal_step(
+    plan: TodoPlan,
+    frame: PlanningFrame,
+    slots: dict[str, str],
+) -> TodoPlan:
+    if not _has_legal_frame_signal(frame, slots):
+        return plan
+    if any(item.id in {"legal_lookup", "legal_check_against_data"} for item in plan.items):
+        return plan
+    if not _plan_has_data_tool(plan):
+        return plan
+
+    summary = next((item for item in plan.items if item.id == "summarize_answer"), None)
+    legal_order = summary.order if summary is not None else len(plan.items) + 1
+    if summary is not None:
+        summary.order += 1
+
+    step_order = _next_step_order(plan)
+    legal = TodoItem(
+        id="legal_lookup",
+        type="non_blocking",
+        order=legal_order,
+        inputs={"query": _legal_query(frame, slots)},
+        tool_calls=[
+            PlanStep(
+                order=step_order,
+                tool="retrieve_legal",
+                args={"query": _legal_query(frame, slots)},
+                reason="compiled:additive_legal",
+            )
+        ],
+    )
+    plan.items.append(legal)
+    plan.items.sort(key=lambda item: item.order)
+    plan.trace.append("compiler additive legal_lookup")
+    return plan
+
+
+def _has_legal_frame_signal(frame: PlanningFrame, slots: dict[str, str]) -> bool:
+    if any(field in _LEGAL_FIELDS for field in frame.fields):
+        return True
+    return _has_slot(slots, "legal_query")
+
+
+def _plan_has_data_tool(plan: TodoPlan) -> bool:
+    return any(
+        item.tool_calls and item.id not in _INTERNAL_TODOS and item.id != "legal_lookup"
+        for item in plan.items
+    )
+
+
+def _next_step_order(plan: TodoPlan) -> int:
+    orders = [step.order for item in plan.items for step in item.tool_calls]
+    return max(orders, default=0) + 1
+
+
+def _legal_query(frame: PlanningFrame, slots: dict[str, str]) -> str:
+    if _has_slot(slots, "legal_query"):
+        return slots["legal_query"]
+    relation = _norm(frame.relation)
+    if relation == "documents" or frame.target == "Document":
+        return "документы по договору 38-ФЗ"
+    if relation == "placements" or frame.target == "Placement":
+        return "маркировка рекламы erid"
+    if relation == "parties":
+        return "обязанности сторон по 38-ФЗ"
+    return "38-ФЗ"
 
 
 def _todo_template(card: ProtocolCard) -> list[str]:

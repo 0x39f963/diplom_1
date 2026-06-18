@@ -24,6 +24,11 @@ _SELECTOR_KEYS = frozenset(
         "role",
         "counterparty_hint",
         "contract_number",
+        "query",
+        "search_query",
+        "name",
+        "title",
+        "legal_query",
     }
 )
 _DATE_HINTS = frozenset({"none", "yesterday", "last_week", "last_month"})

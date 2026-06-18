@@ -87,6 +87,20 @@ class EntityRefs:
     def primary_counterparty(self) -> str | None:
         return self.counterparty_ids[0] if self.counterparty_ids else None
 
+    @property
+    def all_ids(self) -> list[str]:
+        return _dedupe(
+            [
+                *self.contract_ids,
+                *self.creative_ids,
+                *self.counterparty_ids,
+                *self.document_ids,
+                *self.placement_ids,
+                *self.contract_numbers,
+                *self.counterparty_hints,
+            ]
+        )
+
 
 def _dedupe(values: Iterable[str]) -> list[str]:
     seen: set[str] = set()

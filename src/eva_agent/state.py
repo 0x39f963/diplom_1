@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -83,6 +83,7 @@ class AgentState(BaseModel):
     nlu: NluFeatures | None = None
     guard_in: GuardVerdict | None = None
     guard_out: GuardVerdict | None = None
+    debug: dict[str, Any] = Field(default_factory=dict)
 
     intent: Intent | None = None
     frame: PlanningFrame | None = None

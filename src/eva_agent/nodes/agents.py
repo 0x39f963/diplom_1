@@ -18,6 +18,7 @@ from eva_agent.settings import settings
 from eva_agent.state import AgentState, ApiFinding, CriticVerdict, Intent
 from eva_agent.tools.entity_ref import has_domain_signal
 from eva_agent.tools.retrieve import retrieve_howto, retrieve_legal
+from eva_agent.tracing import log_span_event
 
 _INTENT_KINDS = {
     "legal_consult", "interface_consult", "mixed_diagnostic", "need_clarification", "out_of_scope",
@@ -199,20 +200,78 @@ def data_gather(state: AgentState) -> dict:
     )
 
     checklist = _update_checklist(state.checklist, plan, all_findings)
+    plan_debug = _plan_debug(plan)
 
     if plan.status == "awaiting_clarification":
         result = {
             "intent": _clarification_intent(state, plan),
             "todo_plan": plan,
             "plan_attempts": plan_attempts,
+            "debug": {**state.debug, "plan": plan_debug},
         }
         if checklist is not None:
             result["checklist"] = checklist
         return result
-    result = {"api_findings": all_findings, "todo_plan": plan, "plan_attempts": plan_attempts}
+    result = {
+        "api_findings": all_findings,
+        "todo_plan": plan,
+        "plan_attempts": plan_attempts,
+        "debug": {**state.debug, "plan": plan_debug},
+    }
     if checklist is not None:
         result["checklist"] = checklist
     return result
+
+
+def _plan_debug(plan: TodoPlan) -> dict[str, Any]:
+    payload = {
+        "protocol_id": plan.protocol_id,
+        "selected_card_id": _selected_card_id(plan),
+        "top_scores": _top_scores(plan),
+        "clarify_code": plan.clarify_code,
+        "clarify_reason": _clarify_reason(plan) if plan.status == "awaiting_clarification" else "",
+        "tools": _plan_tools(plan),
+    }
+    log_span_event({"plan": payload})
+    return payload
+
+
+def _selected_card_id(plan: TodoPlan) -> str:
+    for event in plan.trace:
+        if event.startswith("compiler selected "):
+            return event.removeprefix("compiler selected ").strip()
+    if plan.strategy.startswith("compiled:"):
+        return plan.strategy.removeprefix("compiled:").strip()
+    return ""
+
+
+def _top_scores(plan: TodoPlan) -> list[dict[str, Any]]:
+    scores: list[dict[str, Any]] = []
+    for event in plan.trace:
+        if not event.startswith("compiler rank "):
+            continue
+        raw = event.removeprefix("compiler rank ").strip()
+        card_id, separator, score_raw = raw.partition("=")
+        if not separator:
+            continue
+        try:
+            score = int(score_raw)
+        except ValueError:
+            continue
+        scores.append({"card_id": card_id, "score": score})
+        if len(scores) >= 3:
+            break
+    return scores
+
+
+def _plan_tools(plan: TodoPlan) -> list[str]:
+    tools: list[str] = []
+    for item in plan.items:
+        for step in item.tool_calls:
+            tool = str(step.tool)
+            if tool not in tools:
+                tools.append(tool)
+    return tools
 
 
 def _plan_for_state(state: AgentState, query: str) -> tuple[TodoPlan, int, str, str]:

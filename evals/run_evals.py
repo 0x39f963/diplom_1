@@ -165,6 +165,33 @@ def _empty_plan(state: dict[str, Any]) -> bool:
     return bool(getattr(plan, "is_empty", False))
 
 
+def _debug_capture(state: dict[str, Any]) -> dict[str, Any]:
+    debug = state.get("debug")
+    if isinstance(debug, dict) and debug:
+        return debug
+
+    guard = state.get("guard_in")
+    frame = state.get("frame")
+    plan = state.get("todo_plan")
+    fallback: dict[str, Any] = {}
+    if guard is not None:
+        fallback["guard"] = {
+            "decision": getattr(guard, "decision", None),
+            "risk_type": getattr(guard, "risk_type", None),
+        }
+    if frame is not None:
+        fallback["frame"] = {
+            "target": getattr(frame, "target", None),
+            "relation": getattr(frame, "relation", None),
+        }
+    if plan is not None:
+        fallback["plan"] = {
+            "protocol_id": getattr(plan, "protocol_id", None),
+            "clarify_code": getattr(plan, "clarify_code", ""),
+        }
+    return fallback
+
+
 def _is_clarification(state: dict[str, Any]) -> bool:
     return _intent_kind(state) == "need_clarification" or _todo_status(state) == "awaiting_clarification"
 
@@ -461,6 +488,7 @@ def main() -> int:
                 "judge_ok": judge_value,
                 "tool_ok": tool_value,
                 "plan": _plan_capture(state),
+                "debug": _debug_capture(state),
             }
         )
         print(f"  [{'OK' if ok else 'XX'}] {case['id']:24} lat={latency:5.1f}s cost=${cost:.5f}")

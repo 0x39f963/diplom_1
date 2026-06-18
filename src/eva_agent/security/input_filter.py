@@ -43,6 +43,7 @@ _DENY = re.compile(
 _B64 = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
 _HEX = re.compile(r"(?:[0-9a-fA-F]{2}){8,}")
 _WORD = re.compile(r"\w+", re.UNICODE)
+_SPACE = re.compile(r"\s+")
 
 
 def _strip_invisible(text: str) -> str:
@@ -72,6 +73,11 @@ def _decoded_payloads(text: str) -> list[str]:
         except ValueError:
             continue
     return out
+
+
+def _matched_rule(name: str, match: re.Match[str]) -> str:
+    fragment = _SPACE.sub(" ", match.group(0).strip().lower())[:80]
+    return f"{name}:{fragment}" if fragment else name
 
 
 def _has_mixed_script_word(text: str) -> bool:
@@ -104,21 +110,25 @@ def filter_input(raw: str) -> GuardVerdict:
         categories.append("normalized")
         risk = max(risk, 0.15)
 
-    if _DENY.search(clean):
+    if match := _DENY.search(clean):
         return GuardVerdict(
             decision="block",
             risk_score=0.9,
             categories=[*categories, "injection_phrase"],
             reason="Обнаружена явная инструкция-инъекция во вводе.",
+            risk_type="prompt_injection",
+            matched_rules=[_matched_rule("deny:injection_phrase", match)],
         )
 
     for decoded in _decoded_payloads(clean):
-        if _DENY.search(decoded):
+        if match := _DENY.search(decoded):
             return GuardVerdict(
                 decision="block",
                 risk_score=0.9,
                 categories=[*categories, "encoded_injection"],
                 reason="Инъекция в закодированной (base64/hex) подстроке.",
+                risk_type="prompt_injection",
+                matched_rules=[_matched_rule("deny:encoded_injection", match)],
             )
 
     if _has_mixed_script_word(clean):

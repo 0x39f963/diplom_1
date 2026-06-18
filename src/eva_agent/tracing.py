@@ -47,6 +47,24 @@ def traced_node[NodeF: Callable[..., dict]](name: str, fn: NodeF) -> NodeF:
     return observe(name=name, as_type="agent", capture_input=False, capture_output=False)(fn)
 
 
+def log_span_event(payload: dict[str, Any]) -> None:
+    """Attach structured debug metadata to the current LangFuse span."""
+    if not payload or not langfuse_enabled():
+        return
+    try:
+        from langfuse import get_client
+
+        client = get_client()
+        try:
+            client.update_current_span(metadata=payload)
+        except AttributeError:
+            update_current_observation = getattr(client, "update_current_observation", None)
+            if update_current_observation is not None:
+                update_current_observation(metadata=payload)
+    except Exception:
+        return
+
+
 def run_request(graph: Any, user_input: str, *, session_id: str | None = None) -> dict:
     """Прогон графа как ОДИН трейс LangFuse: человек -> узлы-агенты -> ответ.
 

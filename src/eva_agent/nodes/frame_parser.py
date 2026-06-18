@@ -17,6 +17,7 @@ from eva_agent.nlu.preprocess import NluFeatures, preprocess
 from eva_agent.planner.compile import rank_protocol_cards
 from eva_agent.state import AgentState
 from eva_agent.tools.build_domain_map import load_domain_map
+from eva_agent.tracing import log_span_event
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 _CLAUSE_SPLIT_RE = re.compile(
@@ -71,7 +72,7 @@ def intent_frame_parser(state: AgentState) -> dict[str, Any]:
             if validation.ok:
                 frame = _with_validation_trace(frame, validation)
                 frame = _with_composite_confidence(frame, draft, nlu, domain_map)
-                return {"frame": frame, "checklist": _checklist_from_frame(frame, state, domain_map)}
+                return _frame_result(frame, state=state, domain_map=domain_map)
 
             signature = validation.signature
             if signature in seen_signatures:
@@ -96,7 +97,37 @@ def intent_frame_parser(state: AgentState) -> dict[str, Any]:
     )
     frame = _apply_decomposition(query, nlu, frame, domain_map)
     frame = _with_composite_confidence(frame, draft, nlu, domain_map)
-    return {"frame": frame, "checklist": _checklist_from_frame(frame, state, domain_map)}
+    return _frame_result(frame, state=state, domain_map=domain_map)
+
+
+def _frame_result(
+    frame: PlanningFrame,
+    *,
+    state: AgentState,
+    domain_map: dict[str, Any],
+) -> dict[str, Any]:
+    payload = _frame_debug(frame)
+    return {
+        "frame": frame,
+        "checklist": _checklist_from_frame(frame, state, domain_map),
+        "debug": {**state.debug, "frame": payload},
+    }
+
+
+def _frame_debug(frame: PlanningFrame) -> dict[str, Any]:
+    payload = {
+        "operation": frame.operation,
+        "target": frame.target,
+        "relation": frame.relation,
+        "fields": list(frame.fields),
+        "selector_keys": list(frame.selector.keys()),
+        "cardinality": frame.cardinality,
+        "needs_clarification": frame.needs_clarification,
+        "confidence": frame.confidence,
+        "confidence_factors": dict(frame.confidence_factors),
+    }
+    log_span_event({"frame": payload})
+    return payload
 
 
 def _user_prompt(

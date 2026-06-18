@@ -11,6 +11,13 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 GuardDecision = Literal["allow", "sanitize", "block", "escalate"]
+RiskType = Literal[
+    "none",
+    "prompt_injection",
+    "policy_forbidden",
+    "pii_exfiltration",
+    "unknown",
+]
 
 
 class GuardVerdict(BaseModel):
@@ -27,6 +34,10 @@ class GuardVerdict(BaseModel):
     categories: list[str] = Field(default_factory=list)
     reason: str = ""
     sanitized_text: str | None = None
+    risk_type: RiskType = "none"
+    matched_rules: list[str] = Field(default_factory=list)
+    domain_signals: list[str] = Field(default_factory=list)
+    safe_read_action: bool = False
 
     @property
     def passed(self) -> bool:

@@ -231,6 +231,7 @@ def _plan_debug(plan: TodoPlan) -> dict[str, Any]:
         "clarify_code": plan.clarify_code,
         "clarify_reason": _clarify_reason(plan) if plan.status == "awaiting_clarification" else "",
         "tools": _plan_tools(plan),
+        "coverage": dict(plan.coverage),
     }
     log_span_event({"plan": payload})
     return payload
@@ -278,7 +279,7 @@ def _plan_for_state(state: AgentState, query: str) -> tuple[TodoPlan, int, str, 
     memory = getattr(state, "memory", None)
     if state.todo_plan is None and _use_protocol_compiler(state) and state.frame is not None:
         return (
-            compile_plan(state.frame, domain_slice=state.domain_slice),
+            compile_plan(state.frame, domain_slice=state.domain_slice, nlu=state.nlu),
             state.plan_attempts,
             "compile",
             "",
@@ -314,7 +315,7 @@ def _plan_for_state(state: AgentState, query: str) -> tuple[TodoPlan, int, str, 
         return state.todo_plan.model_copy(deep=True), state.plan_attempts, "reuse", ""
     if _use_protocol_compiler(state) and state.frame is not None:
         return (
-            compile_plan(state.frame, domain_slice=state.domain_slice),
+            compile_plan(state.frame, domain_slice=state.domain_slice, nlu=state.nlu),
             state.plan_attempts + 1,
             "compile_rebuild",
             reason,

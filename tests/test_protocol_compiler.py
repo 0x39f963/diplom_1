@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from eva_agent.domain.frame import PlanningFrame
+from eva_agent.nlu.preprocess import preprocess
 from eva_agent.planner.compile import compile_plan, rank_protocol_cards
 
 
@@ -227,6 +228,143 @@ def test_mixed_legal_placements_adds_retrieve_legal_to_data_plan() -> None:
     assert "retrieve_legal" in tools
     assert by_id["legal_lookup"].depends_on == []
     assert by_id["legal_lookup"].tool_calls[0].args["query"] == "маркировка рекламы erid"
+
+
+def test_coverage_adds_contract_card_parties_and_documents() -> None:
+    plan = compile_plan(
+        _frame(
+            target="Contract",
+            selector={"contract_id": "CT-2"},
+            output="card",
+        ),
+        nlu=preprocess("карточка договора CT-2, стороны и документы"),
+    )
+
+    tools = [step.tool for item in plan.items for step in item.tool_calls]
+    assert plan.status == "in_progress"
+    assert tools == [
+        "eva_get_contract",
+        "eva_get_contract_parties",
+        "eva_list_contract_documents",
+    ]
+    assert plan.coverage["missing"] == []
+    assert set(plan.coverage["covered"]) >= {
+        "Contract.card",
+        "Contract.parties",
+        "Contract.documents",
+    }
+
+
+def test_coverage_adds_creative_status_after_placements() -> None:
+    plan = compile_plan(
+        _frame(
+            operation="list",
+            target="Placement",
+            relation="placements",
+            cardinality="all",
+            selector={"contract_id": "CT-1"},
+            output="list",
+        ),
+        nlu=preprocess("какие размещения по CT-1 и какие креативы"),
+    )
+
+    by_id = {item.id: item for item in plan.items}
+    tools = [step.tool for item in plan.items for step in item.tool_calls]
+
+    assert plan.status == "in_progress"
+    assert tools == ["eva_list_placements", "eva_get_creative_status"]
+    ref = by_id["get_creative_status"].tool_calls[0].args["creative_id"]["$from"]
+    assert ref == {
+        "todo": "list_placements",
+        "path": "placements[].creative_id",
+        "cardinality": "many",
+        "fan_out": True,
+    }
+    assert by_id["get_creative_status"].depends_on == [2]
+    assert plan.coverage["missing"] == []
+
+
+def test_coverage_adds_legal_rules_from_nlu_signal() -> None:
+    plan = compile_plan(
+        _frame(
+            operation="list",
+            target="Placement",
+            relation="placements",
+            cardinality="all",
+            selector={"contract_id": "CT-1"},
+            output="list",
+        ),
+        nlu=preprocess("нужна ли маркировка для размещений CT-1, покажи размещения"),
+    )
+
+    tools = [step.tool for item in plan.items for step in item.tool_calls]
+    assert plan.status == "in_progress"
+    assert tools == ["eva_list_placements", "retrieve_legal"]
+    assert plan.coverage["missing"] == []
+    assert "Legal.rules" in plan.coverage["covered"]
+
+
+def test_coverage_keeps_single_atom_contract_card_unchanged() -> None:
+    plan = compile_plan(
+        _frame(selector={"contract_id": "CT-1"}, output="card"),
+        nlu=preprocess("покажи карточку CT-1"),
+    )
+
+    tools = [step.tool for item in plan.items for step in item.tool_calls]
+    assert plan.status == "in_progress"
+    assert tools == ["eva_get_contract"]
+    assert plan.coverage["missing"] == []
+
+
+def test_coverage_keeps_direct_counterparty_card_unchanged() -> None:
+    plan = compile_plan(
+        _frame(
+            target="Counterparty",
+            selector={"counterparty_id": "CP-1"},
+            output="card",
+        ),
+        nlu=preprocess("покажи карточку контрагента CP-1"),
+    )
+
+    tools = [step.tool for item in plan.items for step in item.tool_calls]
+    assert plan.status == "in_progress"
+    assert tools == ["eva_get_counterparty"]
+    assert plan.coverage["missing"] == []
+
+
+def test_coverage_keeps_direct_creative_status_unchanged() -> None:
+    plan = compile_plan(
+        _frame(
+            operation="diagnose",
+            target="Creative",
+            fields=["status"],
+            selector={"creative_id": "CR-1"},
+            output="value",
+        ),
+        nlu=preprocess("проверь статус креатива CR-1"),
+    )
+
+    tools = [step.tool for item in plan.items for step in item.tool_calls]
+    assert plan.status == "in_progress"
+    assert tools == ["eva_get_creative_status"]
+    assert plan.coverage["missing"] == []
+
+
+def test_coverage_keeps_direct_document_read_unchanged() -> None:
+    plan = compile_plan(
+        _frame(
+            target="Document",
+            relation="documents",
+            selector={"doc_id": "DOC-1"},
+            output="card",
+        ),
+        nlu=preprocess("прочитай документ DOC-1"),
+    )
+
+    tools = [step.tool for item in plan.items for step in item.tool_calls]
+    assert plan.status == "in_progress"
+    assert tools == ["eva_doc_read"]
+    assert plan.coverage["missing"] == []
 
 
 def test_low_confidence_with_explicit_id_compiles() -> None:

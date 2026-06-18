@@ -18,6 +18,7 @@ class TodoSpec(BaseModel):
     blockers: list[str] = Field(default_factory=list)
     tools: list[PlanTool] = Field(default_factory=list)
     output: str = ""
+    emits: list[str] = Field(default_factory=list)
 
 
 CATALOG: dict[str, TodoSpec] = {
@@ -49,6 +50,7 @@ CATALOG: dict[str, TodoSpec] = {
         inputs_optional=["date_hint", "status_hint"],
         tools=["eva_search_contracts"],
         output="подходящие договоры",
+        emits=["Contract.resolution"],
     ),
     "get_contract": TodoSpec(
         id="get_contract",
@@ -58,6 +60,7 @@ CATALOG: dict[str, TodoSpec] = {
         blockers=["нет contract_id"],
         tools=["eva_get_contract"],
         output="карточка договора",
+        emits=["Contract.card"],
     ),
     "list_unsigned_contracts": TodoSpec(
         id="list_unsigned_contracts",
@@ -74,6 +77,7 @@ CATALOG: dict[str, TodoSpec] = {
         blockers=["нет contract_id"],
         tools=["eva_get_contract_parties"],
         output="стороны договора с ролями и counterparty_id",
+        emits=["Contract.parties", "ContractParty.counterparty"],
     ),
     "resolve_party_role": TodoSpec(
         id="resolve_party_role",
@@ -92,6 +96,7 @@ CATALOG: dict[str, TodoSpec] = {
         blockers=["нет counterparty_id"],
         tools=["eva_get_counterparty"],
         output="карточка контрагента",
+        emits=["Counterparty.card"],
     ),
     "list_user_counterparties": TodoSpec(
         id="list_user_counterparties",
@@ -117,6 +122,7 @@ CATALOG: dict[str, TodoSpec] = {
         blockers=["нет creative_id"],
         tools=["eva_get_creative_status"],
         output="статус и причины блокировки креатива",
+        emits=["Creative.status"],
     ),
     "get_creative_blockers": TodoSpec(
         id="get_creative_blockers",
@@ -163,6 +169,7 @@ CATALOG: dict[str, TodoSpec] = {
         blockers=["нет contract_id"],
         tools=["eva_list_placements"],
         output="список размещений",
+        emits=["Contract.placements", "Placement.creative"],
     ),
     "list_documents": TodoSpec(
         id="list_documents",
@@ -172,6 +179,7 @@ CATALOG: dict[str, TodoSpec] = {
         blockers=["нет contract_id"],
         tools=["eva_list_contract_documents"],
         output="список документов со статусами",
+        emits=["Contract.documents"],
     ),
     "check_missing_documents": TodoSpec(
         id="check_missing_documents",
@@ -181,6 +189,7 @@ CATALOG: dict[str, TodoSpec] = {
         blockers=["нет contract_id"],
         tools=["eva_list_contract_documents"],
         output="список отсутствующих типов документов",
+        emits=["Contract.documents.missing"],
     ),
     "read_document": TodoSpec(
         id="read_document",
@@ -217,6 +226,7 @@ CATALOG: dict[str, TodoSpec] = {
         inputs_required=["query"],
         tools=["retrieve_legal"],
         output="фрагменты норм с цитатами",
+        emits=["Legal.rules"],
     ),
     "legal_check_against_data": TodoSpec(
         id="legal_check_against_data",
@@ -226,6 +236,7 @@ CATALOG: dict[str, TodoSpec] = {
         inputs_optional=["contract_id", "creative_id", "counterparty_id"],
         tools=["retrieve_legal"],
         output="вывод о готовности или допустимости",
+        emits=["Legal.rules"],
     ),
     "build_overview": TodoSpec(
         id="build_overview",

@@ -88,6 +88,7 @@ class TodoPlan(BaseModel):
     clarify_question: str = ""
     clarify_code: str = ""
     trace: list[str] = Field(default_factory=list)
+    coverage: dict[str, list[str]] = Field(default_factory=dict)
 
     @property
     def is_empty(self) -> bool:

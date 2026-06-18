@@ -7,8 +7,17 @@ from typing import Any, Literal, cast
 
 from eva_agent.domain.frame import PlanningFrame
 from eva_agent.domain.plan import DateHint, PlanStep, StatusHint, TodoItem, TodoPlan
-from eva_agent.domain.slice import DomainSlice
+from eva_agent.domain.relations import RELATIONS
+from eva_agent.domain.slice import DomainSlice, RelationSpec
+from eva_agent.nlu.preprocess import NluFeatures
 from eva_agent.planner.catalog import CATALOG
+from eva_agent.planner.coverage import (
+    coverage_payload,
+    plan_coverage,
+    requested_atoms,
+    sort_atoms,
+    todos_for_atom,
+)
 from eva_agent.planner.protocols import PROTOCOL_CARDS, PROTOCOLS, ProtocolCard
 from eva_agent.planner.validate import validate_plan
 
@@ -27,6 +36,26 @@ _SPECIFIC_SELECTOR_SLOTS = frozenset(
 )
 _SPECIFIC_OPERATIONS = frozenset({"compare", "open", "download", "attach"})
 _LEGAL_FIELDS = frozenset({"legal", "legal_signal", "law", "norm"})
+_COVERAGE_EXPAND_LIMIT = 2
+_COVERAGE_ATOM_SLOTS: dict[str, str] = {
+    "Contract.card": "contract_id",
+    "Contract.parties": "contract_id",
+    "Contract.documents": "contract_id",
+    "Contract.documents.missing": "contract_id",
+    "Contract.placements": "contract_id",
+    "Creative.status": "creative_id",
+    "Counterparty.card": "counterparty_id",
+}
+_COVERAGE_TODO_PREFERENCE: dict[str, tuple[str, ...]] = {
+    "Contract.card": ("get_contract",),
+    "Contract.parties": ("get_contract_parties",),
+    "Contract.documents": ("list_documents",),
+    "Contract.documents.missing": ("check_missing_documents",),
+    "Contract.placements": ("list_placements",),
+    "Creative.status": ("get_creative_status",),
+    "Counterparty.card": ("get_counterparty",),
+    "Legal.rules": ("legal_lookup",),
+}
 _SLOT_ALIASES: dict[str, str] = {
     "contract": "contract_id",
     "contract_ref": "contract_id",
@@ -65,20 +94,25 @@ class ProtocolRank:
     missing_slots: tuple[str, ...]
 
 
-def compile_plan(frame: PlanningFrame, domain_slice: DomainSlice | None = None) -> TodoPlan:
+def compile_plan(
+    frame: PlanningFrame,
+    domain_slice: DomainSlice | None = None,
+    nlu: NluFeatures | None = None,
+) -> TodoPlan:
     """Build an executable TodoPlan from a typed semantic frame."""
 
     if frame.subtasks:
-        composite = _compile_composite_plan(frame, domain_slice=domain_slice)
+        composite = _compile_composite_plan(frame, domain_slice=domain_slice, nlu=nlu)
         if composite is not None:
             return composite
-    return _compile_single_plan(frame, domain_slice=domain_slice)
+    return _compile_single_plan(frame, domain_slice=domain_slice, nlu=nlu)
 
 
 def _compile_single_plan(
     frame: PlanningFrame,
     *,
     domain_slice: DomainSlice | None = None,
+    nlu: NluFeatures | None = None,
     validate: bool = True,
 ) -> TodoPlan:
     if frame.needs_clarification:
@@ -88,6 +122,7 @@ def _compile_single_plan(
             plan = _clarify_override_plan(
                 frame,
                 domain_slice=domain_slice,
+                nlu=nlu,
                 validate=validate,
             )
             if plan is not None:
@@ -97,13 +132,14 @@ def _compile_single_plan(
                 frame.clarify_reason or "недостаточно входных данных",
                 code=_code_from_reason(frame.clarify_reason),
             )
-    return _compile_resolved_plan(frame, domain_slice=domain_slice, validate=validate)
+    return _compile_resolved_plan(frame, domain_slice=domain_slice, nlu=nlu, validate=validate)
 
 
 def _compile_resolved_plan(
     frame: PlanningFrame,
     *,
     domain_slice: DomainSlice | None,
+    nlu: NluFeatures | None,
     validate: bool,
 ) -> TodoPlan:
     slots = _slots(frame)
@@ -114,7 +150,7 @@ def _compile_resolved_plan(
     if not frame.target:
         return _clarify_plan(frame, "не определена целевая сущность", code="unknown_target")
     if frame.target not in {card.target for card in PROTOCOL_CARDS}:
-        fallback = _fallback_read_plan(frame, domain_slice=domain_slice)
+        fallback = _fallback_read_plan(frame, domain_slice=domain_slice, nlu=nlu)
         if fallback is not None:
             return fallback
         return _clarify_plan(
@@ -125,7 +161,7 @@ def _compile_resolved_plan(
 
     ranked = rank_protocol_cards(frame, domain_slice=domain_slice)
     if not ranked or ranked[0].score <= 0:
-        fallback = _fallback_read_plan(frame, domain_slice=domain_slice)
+        fallback = _fallback_read_plan(frame, domain_slice=domain_slice, nlu=nlu)
         if fallback is not None:
             return fallback
         return _clarify_plan(
@@ -166,6 +202,7 @@ def _compile_resolved_plan(
         plan.confidence = max(plan.confidence, TAU_CLARIFY)
         plan.trace.append("clarify overridden: low confidence with domain signal")
     plan.trace.extend(_rank_trace(ranked[:3], selected))
+    plan = _with_coverage(plan, frame, nlu=nlu, domain_slice=domain_slice)
     if validate:
         plan = validate_plan(plan)
         _ensure_clarify_code(plan, frame, selected)
@@ -176,17 +213,18 @@ def _clarify_override_plan(
     frame: PlanningFrame,
     *,
     domain_slice: DomainSlice | None,
+    nlu: NluFeatures | None,
     validate: bool,
 ) -> TodoPlan | None:
     slots = _slots(frame)
     if not _can_try_clarify_override(frame, slots):
         return None
     candidate = _without_clarification(frame, "clarify overridden: safe read-only plan exists")
-    plan = _compile_resolved_plan(candidate, domain_slice=domain_slice, validate=validate)
+    plan = _compile_resolved_plan(candidate, domain_slice=domain_slice, nlu=nlu, validate=validate)
     if _plan_is_usable(plan):
         plan.trace.append("clarify overridden: safe read-only plan exists")
         return plan
-    fallback = _fallback_read_plan(candidate, domain_slice=domain_slice)
+    fallback = _fallback_read_plan(candidate, domain_slice=domain_slice, nlu=nlu)
     if fallback is not None and _plan_is_usable(fallback):
         fallback.trace.append("clarify overridden: safe read-only plan exists")
         return fallback
@@ -263,6 +301,7 @@ def _compile_composite_plan(
     frame: PlanningFrame,
     *,
     domain_slice: DomainSlice | None = None,
+    nlu: NluFeatures | None = None,
 ) -> TodoPlan | None:
     frames = _composite_frames(frame)
     if len(frames) < 2 or len(frames) > _COMPOSITE_LIMIT:
@@ -272,12 +311,15 @@ def _compile_composite_plan(
     for item in frames:
         subframe = _canonical_composite_frame(item, parent_slots=parent_slots)
         parent_slots.update(_slots(subframe))
-        plan = _compile_single_plan(subframe, domain_slice=domain_slice, validate=False)
+        plan = _compile_single_plan(subframe, domain_slice=domain_slice, nlu=None, validate=False)
         if plan.status == "awaiting_clarification" or plan.is_empty:
             return None
         plans.append(plan)
     merged = _merge_composite_plans(frame, plans)
-    return validate_plan(merged) if merged is not None else None
+    if merged is None:
+        return None
+    merged = _with_coverage(merged, frame, nlu=nlu, domain_slice=domain_slice)
+    return validate_plan(merged)
 
 
 def _composite_frames(frame: PlanningFrame) -> list[PlanningFrame]:
@@ -792,6 +834,7 @@ def _fallback_read_plan(
     frame: PlanningFrame,
     *,
     domain_slice: DomainSlice | None,
+    nlu: NluFeatures | None,
 ) -> TodoPlan | None:
     slots = _slots(frame)
     for operation in ("read", "list"):
@@ -820,6 +863,7 @@ def _fallback_read_plan(
             plan.confidence = max(plan.confidence, TAU_CLARIFY)
             plan.trace.append("clarify overridden: low confidence with domain signal")
         plan.trace.extend(_rank_trace(ranked[:3], selected))
+        plan = _with_coverage(plan, frame, nlu=nlu, domain_slice=domain_slice)
         return validate_plan(plan)
     return None
 
@@ -943,6 +987,230 @@ def _legal_query(frame: PlanningFrame, slots: dict[str, str]) -> str:
     if relation == "parties":
         return "обязанности сторон по 38-ФЗ"
     return "38-ФЗ"
+
+
+def _with_coverage(
+    plan: TodoPlan,
+    frame: PlanningFrame,
+    *,
+    nlu: NluFeatures | None,
+    domain_slice: DomainSlice | None,
+) -> TodoPlan:
+    requested = requested_atoms(frame, nlu)
+    result = plan_coverage(plan, requested)
+    if result.missing and plan.status != "awaiting_clarification":
+        _expand_coverage(plan, frame, result.missing, domain_slice=domain_slice)
+        result = plan_coverage(plan, requested)
+    _record_coverage(plan, result)
+    if result.missing and plan.status != "awaiting_clarification":
+        _coverage_clarify(plan, result.missing)
+    return plan
+
+
+def _expand_coverage(
+    plan: TodoPlan,
+    frame: PlanningFrame,
+    missing: set[str],
+    *,
+    domain_slice: DomainSlice | None,
+) -> None:
+    slots = _slots(frame)
+    added = 0
+    for atom in sort_atoms(missing):
+        if added >= _COVERAGE_EXPAND_LIMIT:
+            plan.trace.append("coverage expand limit reached")
+            return
+        todo_id = _coverage_todo_for_atom(atom)
+        if not todo_id or _has_todo(plan, todo_id):
+            continue
+        item = _build_coverage_item(todo_id, plan, frame, slots, domain_slice=domain_slice)
+        if item is None:
+            plan.trace.append(f"coverage cannot add {atom}")
+            continue
+        _insert_coverage_item(plan, item)
+        plan.trace.append(f"coverage added {todo_id} for {atom}")
+        added += 1
+
+
+def _coverage_todo_for_atom(atom: str) -> str:
+    for todo_id in _COVERAGE_TODO_PREFERENCE.get(atom, ()):
+        if todo_id in CATALOG:
+            return todo_id
+    todo_ids = todos_for_atom(atom)
+    return todo_ids[0] if todo_ids else ""
+
+
+def _build_coverage_item(
+    todo_id: str,
+    plan: TodoPlan,
+    frame: PlanningFrame,
+    slots: dict[str, str],
+    *,
+    domain_slice: DomainSlice | None,
+) -> TodoItem | None:
+    spec = CATALOG.get(todo_id)
+    if spec is None or not spec.tools:
+        return None
+    for required in spec.inputs_required:
+        if _has_slot(slots, required):
+            continue
+        if _coverage_input_available(todo_id, required, plan, domain_slice=domain_slice):
+            continue
+        return None
+
+    card = _coverage_card(plan, frame, todo_id)
+    item, _ = _build_item(
+        todo_id,
+        todo_order=_coverage_insert_order(plan),
+        step_order=_next_step_order(plan),
+        frame=frame,
+        card=card,
+        slots=slots,
+    )
+    _patch_coverage_inputs(item, plan, frame, slots)
+    return item
+
+
+def _coverage_input_available(
+    todo_id: str,
+    required: str,
+    plan: TodoPlan,
+    *,
+    domain_slice: DomainSlice | None,
+) -> bool:
+    if required == "query" and todo_id in {"legal_lookup", "legal_check_against_data", "search_contracts"}:
+        return True
+    if todo_id == "get_creative_status" and required == "creative_id":
+        return _single_producer_for_tool(plan, "eva_list_placements") is not None
+    spec = CATALOG.get(todo_id)
+    if spec is None:
+        return False
+    target_tools = set(spec.tools)
+    return any(
+        relation.target_arg == required
+        and relation.target_tool in target_tools
+        and _single_producer_for_tool(plan, relation.source_tool) is not None
+        for relation in _active_relations(domain_slice)
+    )
+
+
+def _coverage_card(plan: TodoPlan, frame: PlanningFrame, todo_id: str) -> ProtocolCard:
+    template = [item.id for item in plan.ordered() if item.id != "summarize_answer"]
+    template.extend([todo_id, "summarize_answer"])
+    return ProtocolCard(
+        id="coverage",
+        operation=frame.operation,
+        target=frame.target,
+        relation=frame.relation,
+        protocol_id=cast(Any, plan.protocol_id),
+        todo_template=template,
+    )
+
+
+def _patch_coverage_inputs(
+    item: TodoItem,
+    plan: TodoPlan,
+    frame: PlanningFrame,
+    slots: dict[str, str],
+) -> None:
+    if item.id in {"legal_lookup", "legal_check_against_data"}:
+        query = _legal_query(frame, slots)
+        item.inputs["query"] = query
+        for step in item.tool_calls:
+            step.args["query"] = query
+    if item.id == "get_creative_status" and not _has_input_value(item, "creative_id"):
+        _wire_creative_from_placements(plan, item)
+
+
+def _wire_creative_from_placements(plan: TodoPlan, item: TodoItem) -> None:
+    producer = _single_producer_for_tool(plan, "eva_list_placements")
+    if producer is None:
+        return
+    ref = {
+        "todo": producer.id,
+        "path": "placements[].creative_id",
+        "cardinality": "many",
+        "fan_out": True,
+    }
+    item.inputs["fan_out"] = True
+    for step in item.tool_calls:
+        step.args["creative_id"] = {"$from": ref}
+    if producer.order not in item.depends_on:
+        item.depends_on.append(producer.order)
+    item.type = "dependent"
+
+
+def _insert_coverage_item(plan: TodoPlan, item: TodoItem) -> None:
+    insert_order = _coverage_insert_order(plan)
+    for existing in plan.items:
+        if existing.order >= insert_order:
+            existing.order += 1
+    item.order = insert_order
+    plan.items.append(item)
+    plan.items.sort(key=lambda current: current.order)
+
+
+def _coverage_insert_order(plan: TodoPlan) -> int:
+    summary = next((item for item in plan.items if item.id == "summarize_answer"), None)
+    if summary is not None:
+        return summary.order
+    return max((item.order for item in plan.items), default=0) + 1
+
+
+def _record_coverage(plan: TodoPlan, result: Any) -> None:
+    payload = coverage_payload(result)
+    plan.coverage = payload
+    trace = (
+        "coverage "
+        f"requested={','.join(payload['requested']) or '-'} "
+        f"covered={','.join(payload['covered']) or '-'} "
+        f"missing={','.join(payload['missing']) or '-'}"
+    )
+    if trace not in plan.trace:
+        plan.trace.append(trace)
+
+
+def _coverage_clarify(plan: TodoPlan, missing: set[str]) -> None:
+    slot = _missing_slot_for_atom(sort_atoms(missing)[0])
+    if not slot:
+        return
+    plan.status = "awaiting_clarification"
+    plan.clarify_code = "missing_selector"
+    plan.clarify_question = f"Уточните {_slot_label(slot)}."
+    plan.trace.append(f"coverage clarify missing={','.join(sort_atoms(missing))}")
+
+
+def _missing_slot_for_atom(atom: str) -> str:
+    return _COVERAGE_ATOM_SLOTS.get(atom, "")
+
+
+def _has_todo(plan: TodoPlan, todo_id: str) -> bool:
+    return any(item.id == todo_id for item in plan.items)
+
+
+def _has_input_value(item: TodoItem, name: str) -> bool:
+    if _has_value(item.inputs.get(name)):
+        return True
+    return any(_has_value(step.args.get(name)) for step in item.tool_calls)
+
+
+def _has_value(value: Any) -> bool:
+    return value not in (None, "", [], {})
+
+
+def _single_producer_for_tool(plan: TodoPlan, tool: str) -> TodoItem | None:
+    producers = [
+        item
+        for item in plan.items
+        if any(str(step.tool) == tool for step in item.tool_calls)
+    ]
+    return producers[0] if len(producers) == 1 else None
+
+
+def _active_relations(domain_slice: DomainSlice | None) -> list[RelationSpec]:
+    if domain_slice is not None:
+        return list(domain_slice.relations)
+    return list(RELATIONS)
 
 
 def _todo_template(card: ProtocolCard) -> list[str]:

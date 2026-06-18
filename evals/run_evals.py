@@ -139,6 +139,7 @@ def _plan_capture(state: dict[str, Any]) -> dict[str, Any] | None:
         "clarify_question": getattr(plan, "clarify_question", ""),
         "clarify_code": getattr(plan, "clarify_code", ""),
         "empty_plan": getattr(plan, "is_empty", False),
+        "coverage": dict(getattr(plan, "coverage", {})),
         "items": items,
     }
 

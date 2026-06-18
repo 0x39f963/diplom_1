@@ -42,6 +42,7 @@ def trace_plan(
         ],
         "findings_tools": [finding.tool for finding in findings],
         "trace": list(plan.trace),
+        "coverage": dict(plan.coverage),
         "clarify_question": plan.clarify_question,
         "clarify_code": plan.clarify_code,
         "plan_reused": plan_reused,

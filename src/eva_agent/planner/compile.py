@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from eva_agent.domain.frame import PlanningFrame
 from eva_agent.domain.plan import DateHint, PlanStep, StatusHint, TodoItem, TodoPlan
@@ -15,6 +15,9 @@ from eva_agent.planner.validate import validate_plan
 _INTERNAL_TODOS = frozenset({"parse_goal", "clarify", "summarize_answer"})
 _DATE_HINTS: frozenset[str] = frozenset({"none", "yesterday", "last_week", "last_month"})
 _STATUS_HINTS: frozenset[str] = frozenset({"none", "unsigned", "draft", "registered"})
+TAU_CLARIFY = 0.45
+_WRITE_OPERATIONS = frozenset({"attach", "download"})
+_COMPOSITE_LIMIT = 3
 _SLOT_ALIASES: dict[str, str] = {
     "contract": "contract_id",
     "contract_ref": "contract_id",
@@ -26,6 +29,23 @@ _SLOT_ALIASES: dict[str, str] = {
     "doc": "doc_id",
     "placement": "placement_id",
 }
+_SLOT_LABELS: dict[str, str] = {
+    "contract_id": "договор",
+    "creative_id": "креатив",
+    "counterparty_id": "контрагента",
+    "doc_id": "документ",
+    "placement_id": "размещение",
+    "role": "роль стороны",
+}
+
+ClarifyCode = Literal[
+    "unknown_target",
+    "missing_selector",
+    "ambiguous_role",
+    "ambiguous_protocol",
+    "write_confirm",
+    "low_confidence",
+]
 
 
 @dataclass(frozen=True)
@@ -39,32 +59,215 @@ class ProtocolRank:
 def compile_plan(frame: PlanningFrame, domain_slice: DomainSlice | None = None) -> TodoPlan:
     """Build an executable TodoPlan from a typed semantic frame."""
 
+    if frame.subtasks:
+        composite = _compile_composite_plan(frame, domain_slice=domain_slice)
+        if composite is not None:
+            return composite
+    return _compile_single_plan(frame, domain_slice=domain_slice)
+
+
+def _compile_single_plan(
+    frame: PlanningFrame,
+    *,
+    domain_slice: DomainSlice | None = None,
+) -> TodoPlan:
     if frame.needs_clarification:
-        return _clarify_plan(frame, frame.clarify_reason or "недостаточно входных данных")
+        return _clarify_plan(
+            frame,
+            frame.clarify_reason or "недостаточно входных данных",
+            code=_code_from_reason(frame.clarify_reason),
+        )
     if not frame.target:
-        return _clarify_plan(frame, "не определена целевая сущность")
+        return _clarify_plan(frame, "не определена целевая сущность", code="unknown_target")
     if frame.target not in {card.target for card in PROTOCOL_CARDS}:
-        return _clarify_plan(frame, "нет покрытого протокола для целевой сущности")
+        fallback = _fallback_read_plan(frame, domain_slice=domain_slice)
+        if fallback is not None:
+            return fallback
+        return _clarify_plan(
+            frame,
+            "нет покрытого протокола для целевой сущности",
+            code="ambiguous_protocol",
+        )
 
     ranked = rank_protocol_cards(frame, domain_slice=domain_slice)
     if not ranked or ranked[0].score <= 0:
-        return _clarify_plan(frame, "нет покрытого протокола для запроса")
+        fallback = _fallback_read_plan(frame, domain_slice=domain_slice)
+        if fallback is not None:
+            return fallback
+        return _clarify_plan(
+            frame,
+            "нет покрытого протокола для запроса",
+            code="ambiguous_protocol",
+        )
 
     selected = ranked[0]
     slots = _slots(frame)
     ambiguity = _ambiguity_reason(frame, selected.card, slots)
     if ambiguity:
-        return _clarify_plan(frame, ambiguity)
+        return _clarify_plan(frame, ambiguity, code="ambiguous_role", missing_slot="role")
+    if frame.confidence < TAU_CLARIFY:
+        return _clarify_plan(frame, "низкая уверенность разбора", code="low_confidence")
+    write_slot = _missing_write_slot(frame, selected)
+    if write_slot:
+        return _clarify_plan(
+            frame,
+            f"нет {write_slot}",
+            code="write_confirm",
+            missing_slot=write_slot,
+        )
 
     plan = _build_plan(frame, selected.card, slots)
     plan.trace.extend(_rank_trace(ranked[:3], selected))
-    return validate_plan(plan)
+    plan = validate_plan(plan)
+    _ensure_clarify_code(plan, frame, selected)
+    return plan
 
 
 def compile_frame(frame: PlanningFrame, domain_slice: DomainSlice | None = None) -> TodoPlan:
     """Alias kept for call sites that name the source object explicitly."""
 
     return compile_plan(frame, domain_slice=domain_slice)
+
+
+def _compile_composite_plan(
+    frame: PlanningFrame,
+    *,
+    domain_slice: DomainSlice | None = None,
+) -> TodoPlan | None:
+    frames = _composite_frames(frame)
+    if len(frames) < 2 or len(frames) > _COMPOSITE_LIMIT:
+        return None
+    plans: list[TodoPlan] = []
+    for item in frames:
+        subframe = item.model_copy(update={"subtasks": []})
+        plan = _compile_single_plan(subframe, domain_slice=domain_slice)
+        if plan.status == "awaiting_clarification" or plan.is_empty:
+            return None
+        plans.append(plan)
+    merged = _merge_composite_plans(frame, plans)
+    return validate_plan(merged) if merged is not None else None
+
+
+def _composite_frames(frame: PlanningFrame) -> list[PlanningFrame]:
+    subtasks = [item.model_copy(update={"subtasks": []}) for item in frame.subtasks]
+    head = frame.model_copy(update={"subtasks": []})
+    if subtasks and _same_task(head, subtasks[0]):
+        return subtasks
+    return [head, *subtasks]
+
+
+def _same_task(left: PlanningFrame, right: PlanningFrame) -> bool:
+    return (
+        left.operation == right.operation
+        and left.target == right.target
+        and left.relation == right.relation
+        and left.cardinality == right.cardinality
+        and left.selector == right.selector
+    )
+
+
+def _merge_composite_plans(frame: PlanningFrame, plans: list[TodoPlan]) -> TodoPlan | None:
+    items: list[TodoItem] = []
+    seen_data_todos: set[str] = set()
+    todo_order = 1
+    step_order = 1
+    last_data_order: int | None = None
+    trace: list[str] = ["compiler composite"]
+
+    for plan_index, plan in enumerate(plans):
+        plan_items, step_order = _copy_plan_items(
+            plan,
+            plan_index=plan_index,
+            todo_order=todo_order,
+            step_order=step_order,
+            last_data_order=last_data_order,
+            seen_data_todos=seen_data_todos,
+        )
+        if plan_items is None:
+            return None
+        items.extend(plan_items)
+        todo_order += len(plan_items)
+        data_orders = [item.order for item in plan_items if item.tool_calls and item.id not in _INTERNAL_TODOS]
+        if data_orders:
+            last_data_order = data_orders[-1]
+        trace.extend(plan.trace)
+
+    if not any(item.id == "summarize_answer" for item in items):
+        depends_on = [last_data_order] if last_data_order is not None else []
+        items.append(
+            TodoItem(
+                id="summarize_answer",
+                type="dependent" if depends_on else "blocking",
+                order=todo_order,
+                depends_on=depends_on,
+            )
+        )
+
+    return TodoPlan(
+        goal=_goal(frame),
+        protocol_id=plans[0].protocol_id,
+        strategy="compiled:composite",
+        items=items,
+        status="in_progress",
+        confidence=min(plan.confidence for plan in plans),
+        clarify_code="",
+        trace=_unique(trace),
+    )
+
+
+def _copy_plan_items(
+    plan: TodoPlan,
+    *,
+    plan_index: int,
+    todo_order: int,
+    step_order: int,
+    last_data_order: int | None,
+    seen_data_todos: set[str],
+) -> tuple[list[TodoItem] | None, int]:
+    copied: list[tuple[TodoItem, list[int], bool]] = []
+    old_to_new: dict[int, int] = {}
+    first_data_seen = False
+    next_todo_order = todo_order
+    next_step_order = step_order
+
+    for source in plan.ordered():
+        if source.id == "summarize_answer":
+            continue
+        if source.id == "parse_goal" and (plan_index > 0 or next_todo_order > 1):
+            continue
+        if source.id not in _INTERNAL_TODOS:
+            if source.id in seen_data_todos:
+                return None, step_order
+            seen_data_todos.add(source.id)
+
+        calls: list[PlanStep] = []
+        for call in sorted(source.tool_calls, key=lambda item: item.order):
+            calls.append(call.model_copy(update={"order": next_step_order}))
+            next_step_order += 1
+        is_first_data = bool(source.tool_calls and source.id not in _INTERNAL_TODOS and not first_data_seen)
+        first_data_seen = first_data_seen or is_first_data
+        copied_item = source.model_copy(
+            deep=True,
+            update={"order": next_todo_order, "tool_calls": calls},
+        )
+        old_to_new[source.order] = next_todo_order
+        copied.append((copied_item, list(source.depends_on), is_first_data))
+        next_todo_order += 1
+
+    out: list[TodoItem] = []
+    for item, old_depends, is_first_data in copied:
+        depends = [old_to_new[value] for value in old_depends if value in old_to_new]
+        if is_first_data and plan_index > 0 and last_data_order is not None:
+            depends.append(last_data_order)
+        depends = list(dict.fromkeys(depends))
+        item = item.model_copy(
+            update={
+                "depends_on": depends,
+                "type": "dependent" if depends else item.type,
+            }
+        )
+        out.append(item)
+    return out, next_step_order
 
 
 def rank_protocol_cards(
@@ -147,6 +350,14 @@ def _norm(value: str | None) -> str:
     return (value or "").strip().lower()
 
 
+def _unique(values: list[str]) -> list[str]:
+    out: list[str] = []
+    for value in values:
+        if value not in out:
+            out.append(value)
+    return out
+
+
 def _has_slot(slots: dict[str, str], slot: str) -> bool:
     return slots.get(slot, "") != ""
 
@@ -172,6 +383,73 @@ def _ambiguity_reason(frame: PlanningFrame, card: ProtocolCard, slots: dict[str,
     return ""
 
 
+def _missing_write_slot(frame: PlanningFrame, selected: ProtocolRank) -> str:
+    if frame.operation not in _WRITE_OPERATIONS:
+        return ""
+    for slot in selected.missing_slots:
+        return slot
+    return ""
+
+
+def _fallback_read_plan(
+    frame: PlanningFrame,
+    *,
+    domain_slice: DomainSlice | None,
+) -> TodoPlan | None:
+    slots = _slots(frame)
+    for operation in ("read", "list"):
+        cardinality = "all" if operation == "list" else frame.cardinality
+        candidate = frame.model_copy(
+            update={
+                "operation": operation,
+                "cardinality": cardinality,
+                "subtasks": [],
+                "needs_clarification": False,
+                "clarify_reason": "",
+            }
+        )
+        ranked = rank_protocol_cards(candidate, domain_slice=domain_slice)
+        if not ranked or ranked[0].score <= 0:
+            continue
+        selected = ranked[0]
+        if selected.card.target != frame.target:
+            continue
+        if any(not _has_slot(slots, slot) for slot in selected.card.required_slots):
+            continue
+        plan = _build_plan(candidate, selected.card, slots)
+        plan.trace.append("compiler fallback: minimal read")
+        plan.trace.extend(_rank_trace(ranked[:3], selected))
+        return validate_plan(plan)
+    return None
+
+
+def _ensure_clarify_code(
+    plan: TodoPlan,
+    frame: PlanningFrame,
+    selected: ProtocolRank,
+) -> None:
+    if plan.status != "awaiting_clarification" or plan.clarify_code:
+        return
+    if _ambiguity_reason(frame, selected.card, _slots(frame)):
+        plan.clarify_code = "ambiguous_role"
+        return
+    if selected.missing_slots:
+        plan.clarify_code = "missing_selector"
+        return
+    plan.clarify_code = "low_confidence" if plan.confidence < TAU_CLARIFY else "ambiguous_protocol"
+
+
+def _code_from_reason(reason: str) -> ClarifyCode:
+    lowered = reason.lower()
+    if "сущ" in lowered or "target" in lowered:
+        return "unknown_target"
+    if "роль" in lowered:
+        return "ambiguous_role"
+    if "увер" in lowered:
+        return "low_confidence"
+    return "missing_selector"
+
+
 def _build_plan(frame: PlanningFrame, card: ProtocolCard, slots: dict[str, str]) -> TodoPlan:
     items: list[TodoItem] = []
     step_order = 1
@@ -192,7 +470,7 @@ def _build_plan(frame: PlanningFrame, card: ProtocolCard, slots: dict[str, str])
         strategy=f"compiled:{card.id}",
         items=items,
         status="in_progress",
-        confidence=max(frame.confidence, 0.75),
+        confidence=max(0.0, min(1.0, frame.confidence)),
         trace=[f"compiler selected {card.id}"],
     )
 
@@ -313,8 +591,14 @@ def _goal(frame: PlanningFrame) -> str:
     return f"{frame.operation}:{frame.target}{relation}".strip(":")
 
 
-def _clarify_plan(frame: PlanningFrame, reason: str) -> TodoPlan:
-    question = reason if reason.endswith("?") else f"Уточните входные данные: {reason}."
+def _clarify_plan(
+    frame: PlanningFrame,
+    reason: str,
+    *,
+    code: ClarifyCode = "missing_selector",
+    missing_slot: str = "",
+) -> TodoPlan:
+    question = _clarify_question(frame, reason, code, missing_slot)
     return TodoPlan(
         goal=_goal(frame) or "clarify",
         protocol_id="clarify_first",
@@ -322,12 +606,40 @@ def _clarify_plan(frame: PlanningFrame, reason: str) -> TodoPlan:
         status="awaiting_clarification",
         confidence=min(frame.confidence, 0.4),
         clarify_question=question,
+        clarify_code=code,
         items=[
             TodoItem(id="parse_goal", order=1),
             TodoItem(id="clarify", order=2, blockers=[reason]),
         ],
-        trace=["compiler clarify", reason],
+        trace=["compiler clarify", code, reason],
     )
+
+
+def _clarify_question(
+    frame: PlanningFrame,
+    reason: str,
+    code: ClarifyCode,
+    missing_slot: str,
+) -> str:
+    del frame
+    if code == "unknown_target":
+        return "Уточните, по какой сущности нужны данные."
+    if code == "ambiguous_role":
+        return "Уточните роль стороны: заказчик или исполнитель."
+    if code == "ambiguous_protocol":
+        return "Уточните действие или нужную сущность."
+    if code == "write_confirm":
+        label = _slot_label(missing_slot)
+        return f"Уточните {label} для операции."
+    if code == "low_confidence":
+        return "Уточните цель запроса и нужную сущность."
+    if missing_slot:
+        return f"Уточните {_slot_label(missing_slot)}."
+    return reason if reason.endswith("?") else f"Уточните входные данные: {reason}."
+
+
+def _slot_label(slot: str) -> str:
+    return _SLOT_LABELS.get(slot, slot or "входные данные")
 
 
 def _rank_trace(ranked: list[ProtocolRank], selected: ProtocolRank) -> list[str]:
@@ -341,6 +653,8 @@ def _rank_trace(ranked: list[ProtocolRank], selected: ProtocolRank) -> list[str]
 
 
 __all__ = [
+    "TAU_CLARIFY",
+    "ClarifyCode",
     "ProtocolRank",
     "compile_frame",
     "compile_plan",

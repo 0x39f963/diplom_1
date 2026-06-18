@@ -137,8 +137,32 @@ def _plan_capture(state: dict[str, Any]) -> dict[str, Any] | None:
         "status": getattr(plan, "status", None),
         "confidence": getattr(plan, "confidence", None),
         "clarify_question": getattr(plan, "clarify_question", ""),
+        "clarify_code": getattr(plan, "clarify_code", ""),
+        "empty_plan": getattr(plan, "is_empty", False),
         "items": items,
     }
+
+
+def _frame_confidence(state: dict[str, Any]) -> float | None:
+    frame = state.get("frame")
+    value = getattr(frame, "confidence", None)
+    return float(value) if isinstance(value, int | float) else None
+
+
+def _decomposed(state: dict[str, Any]) -> bool:
+    frame = state.get("frame")
+    return bool(getattr(frame, "subtasks", []))
+
+
+def _clarify_code(state: dict[str, Any]) -> str:
+    plan = state.get("todo_plan")
+    value = getattr(plan, "clarify_code", "")
+    return str(value) if value else ""
+
+
+def _empty_plan(state: dict[str, Any]) -> bool:
+    plan = state.get("todo_plan")
+    return bool(getattr(plan, "is_empty", False))
 
 
 def _is_clarification(state: dict[str, Any]) -> bool:
@@ -190,6 +214,7 @@ def compute_quality_metrics(
     route_total = route_ok = 0
     clarify_total = warranted_total = warranted_clarified = 0
     avoidable_clarifications = 0
+    empty_plans = 0
 
     for case, state in evaluated:
         actual_route = _actual_route(state)
@@ -204,6 +229,7 @@ def compute_quality_metrics(
         warranted_total += int(warranted)
         warranted_clarified += int(clarified and warranted)
         avoidable_clarifications += int(clarified and not warranted)
+        empty_plans += int(_empty_plan(state))
 
     total = len(evaluated)
     return {
@@ -217,6 +243,8 @@ def compute_quality_metrics(
         "clarify_recall": _rate(warranted_clarified, warranted_total),
         "avoidable_clarifications": avoidable_clarifications,
         "avoidable_clarification_rate": _rate(avoidable_clarifications, total),
+        "empty_plan": empty_plans,
+        "empty_plan_rate": _rate(empty_plans, total),
     }
 
 
@@ -297,6 +325,16 @@ def _expected_tools_for_row(asserts: list[dict[str, Any]]) -> list[str]:
             if tool not in tools:
                 tools.append(tool)
     return tools
+
+
+def _optional_float_env(name: str) -> float | None:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
 
 
 def main() -> int:
@@ -405,6 +443,10 @@ def main() -> int:
                 "gold_route": gold_route,
                 "actual_route": actual_route,
                 "known_fail": known_reason,
+                "composite_confidence": _frame_confidence(state),
+                "clarify_code": _clarify_code(state),
+                "decomposed": _decomposed(state),
+                "empty_plan": _empty_plan(state),
                 "latency_sec": round(latency, 3),
                 "cost_usd": cost,
                 "calls": calls,
@@ -459,9 +501,11 @@ def main() -> int:
         f"{quality['avoidable_clarifications']}/{n} = "
         f"{quality['avoidable_clarification_rate']:.0%}"
     )
+    print(f"  empty_plan:                {quality['empty_plan']}/{n} = {quality['empty_plan_rate']:.0%}")
 
     out_path = os.environ.get("EVAL_OUT")
     if out_path:
+        baseline_avoidable = _optional_float_env("EVAL_BASELINE_AVOIDABLE_CLARIFICATION_RATE")
         report = {
             "label": os.environ.get("EVAL_LABEL", "run"),
             "models": _models_under_test(),
@@ -492,6 +536,8 @@ def main() -> int:
                 "latency_total_sec": round(sum(latencies), 3),
                 "cost_avg_usd": statistics.mean(costs) if costs else 0.0,
                 "cost_total_usd": sum(costs),
+                "avoidable_clarification_rate_before": baseline_avoidable,
+                "avoidable_clarification_rate_after": quality["avoidable_clarification_rate"],
                 **quality,
             },
             "cases": rows,

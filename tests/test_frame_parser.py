@@ -230,3 +230,69 @@ def test_intent_frame_parser_common_queries(monkeypatch: Any) -> None:
         )
         for key, value in selector.items():
             assert frame.selector[key] == value
+
+
+def test_intent_frame_parser_repeated_validation_signature_stops_at_fallback(
+    monkeypatch: Any,
+) -> None:
+    client = _FrameClient(
+        [
+            _base_frame(target="UnknownThing"),
+            _base_frame(target="UnknownThing"),
+            _base_frame(target="Contract"),
+        ]
+    )
+    monkeypatch.setattr(frame_parser, "get_client", lambda role: client)
+    monkeypatch.setattr(frame_parser, "retrieve_examples", lambda query, k=5: [])
+
+    result = frame_parser.intent_frame_parser(AgentState(user_input_raw="помоги"))
+
+    assert len(client.calls) == 2
+    assert result["frame"].needs_clarification is True
+    assert result["frame"].clarify_reason
+
+
+def test_intent_frame_parser_uses_deterministic_draft_fallback(monkeypatch: Any) -> None:
+    client = _FrameClient(
+        [
+            _base_frame(target="Contract", relation="bad_relation"),
+            _base_frame(target="Contract", relation="bad_relation"),
+        ]
+    )
+    monkeypatch.setattr(frame_parser, "get_client", lambda role: client)
+    monkeypatch.setattr(frame_parser, "retrieve_examples", lambda query, k=5: [])
+
+    result = frame_parser.intent_frame_parser(
+        AgentState(
+            user_input_raw="статус договора CT-1",
+            intent=Intent(kind="mixed_diagnostic", confidence=0.9),
+            nlu=preprocess("статус договора CT-1"),
+        )
+    )
+
+    frame = result["frame"]
+    assert len(client.calls) == 2
+    assert frame.needs_clarification is False
+    assert frame.target == "Contract"
+    assert frame.relation is None
+    assert "frame fallback: deterministic draft" in frame.trace
+
+
+def test_decompose_query_is_conservative() -> None:
+    domain_map = frame_parser.load_domain_map()
+    composite = frame_parser.decompose_query(
+        "статус креатива CR-1 и каких документов не хватает по договору CT-1",
+        nlu=preprocess("статус креатива CR-1 и каких документов не хватает по договору CT-1"),
+        domain_map=domain_map,
+    )
+    single = frame_parser.decompose_query(
+        "статус креатива CR-1",
+        nlu=preprocess("статус креатива CR-1"),
+        domain_map=domain_map,
+    )
+
+    assert [(frame.operation, frame.target) for frame in composite] == [
+        ("read", "Creative"),
+        ("diagnose", "Document"),
+    ]
+    assert single == []

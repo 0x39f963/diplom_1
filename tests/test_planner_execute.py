@@ -534,6 +534,31 @@ def test_validate_plan_duplicate_step_order_awaits_clarification() -> None:
     assert "step order" in validated.clarify_question
 
 
+def test_validate_plan_missing_required_input_on_extra_todo_awaits_clarification() -> None:
+    plan = _plan(
+        "overview",
+        [
+            TodoItem(id="parse_goal", order=1),
+            TodoItem(
+                id="build_overview",
+                order=2,
+                tool_calls=[PlanStep(order=1, tool="eva_list_unsigned_contracts", args={})],
+            ),
+            TodoItem(
+                id="get_counterparty",
+                order=3,
+                tool_calls=[PlanStep(order=2, tool="eva_get_counterparty", args={})],
+            ),
+            TodoItem(id="summarize_answer", order=4),
+        ],
+    )
+
+    validated = validate_plan(plan)
+
+    assert validated.status == "awaiting_clarification"
+    assert "counterparty_id" in validated.clarify_question
+
+
 def test_validate_plan_dependency_cycle_awaits_clarification() -> None:
     plan = _plan(
         "contract_card",

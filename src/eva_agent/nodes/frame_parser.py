@@ -8,15 +8,25 @@ from collections.abc import Iterable
 from typing import Any, cast
 
 from eva_agent.domain.checklist import EntityCount, PlanningChecklist
+from eva_agent.domain.confidence import composite_confidence
 from eva_agent.domain.frame import FrameFilters, PlanningFrame
+from eva_agent.domain.frame_validate import FrameValidation, validate_frame
 from eva_agent.llm.config import get_client
 from eva_agent.nlu.fewshot import Example, retrieve_examples
 from eva_agent.nlu.preprocess import NluFeatures, preprocess
+from eva_agent.planner.compile import rank_protocol_cards
 from eva_agent.state import AgentState
 from eva_agent.tools.build_domain_map import load_domain_map
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
+_CLAUSE_SPLIT_RE = re.compile(
+    r"\s*(?:;|,?\s+(?:а также|затем|потом|и еще|и)\s+)\s*",
+    re.IGNORECASE,
+)
 _CARD_OUTPUT_TARGETS = frozenset({"Contract", "Counterparty", "Creative"})
+MAX_FRAME_REFINES = 2
+_MAX_FRAME_CALLS = MAX_FRAME_REFINES + 1
+_MAX_PARSE_ERRORS = 2
 
 _FRAME_SYS = (
     "Ты заполняешь типизированный семантический фрейм для планировщика. "
@@ -37,28 +47,55 @@ def intent_frame_parser(state: AgentState) -> dict[str, Any]:
     user = _user_prompt(query, nlu, draft, examples, domain_map)
     schema = PlanningFrame.model_json_schema()
 
+    client = get_client("domain")
     last_error = ""
-    for _ in range(2):
+    parse_errors = 0
+    seen_signatures: set[str] = set()
+    last_validation: FrameValidation | None = None
+    frame: PlanningFrame | None = None
+    prompt = user
+
+    for call_index in range(_MAX_FRAME_CALLS):
         try:
-            response = get_client("domain").invoke(
+            response = client.invoke(
                 _FRAME_SYS,
-                user,
+                prompt,
                 temperature=0.0,
                 schema=schema,
             )
             frame = _parse_frame(response.text)
             frame = _merge_deterministic_hints(frame, draft, domain_map)
-            return {"frame": frame, "checklist": _checklist_from_frame(frame, state, domain_map)}
+            frame = _apply_decomposition(query, nlu, frame, domain_map)
+            validation = validate_frame(frame, domain_map=domain_map, draft=draft)
+            last_validation = validation
+            if validation.ok:
+                frame = _with_validation_trace(frame, validation)
+                frame = _with_composite_confidence(frame, draft, nlu, domain_map)
+                return {"frame": frame, "checklist": _checklist_from_frame(frame, state, domain_map)}
+
+            signature = validation.signature
+            if signature in seen_signatures:
+                frame = _with_trace(frame, f"frame validation repeated: {signature}")
+                break
+            seen_signatures.add(signature)
+            if call_index >= MAX_FRAME_REFINES:
+                break
+            prompt = _repair_prompt(user, validation)
         except Exception as exc:
             last_error = exc.__class__.__name__
+            parse_errors += 1
+            if parse_errors >= _MAX_PARSE_ERRORS or call_index >= _MAX_FRAME_CALLS - 1:
+                break
+            prompt = _parse_repair_prompt(user, last_error)
 
-    frame = draft.model_copy(
-        update={
-            "needs_clarification": True,
-            "clarify_reason": f"frame parse failed: {last_error or 'invalid json'}",
-            "confidence": 0.0,
-        }
+    frame = _fallback_frame(
+        draft,
+        domain_map=domain_map,
+        validation=last_validation,
+        last_error=last_error,
     )
+    frame = _apply_decomposition(query, nlu, frame, domain_map)
+    frame = _with_composite_confidence(frame, draft, nlu, domain_map)
     return {"frame": frame, "checklist": _checklist_from_frame(frame, state, domain_map)}
 
 
@@ -77,6 +114,171 @@ def _user_prompt(
         "few_shot": _fewshot_pairs(examples, domain_map),
     }
     return json.dumps(payload, ensure_ascii=False)
+
+
+def _repair_prompt(base_user: str, validation: FrameValidation) -> str:
+    payload = {
+        "request": _safe_json(base_user),
+        "validation_issues": [
+            {"level": issue.level, "code": issue.code, "hint": issue.hint}
+            for issue in validation.issues
+        ],
+        "instruction": "Верните JSON по той же схеме. Исправьте только поля из validation_issues.",
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _parse_repair_prompt(base_user: str, error: str) -> str:
+    payload = {
+        "request": _safe_json(base_user),
+        "parse_error": error,
+        "instruction": "Верните один JSON-объект по схеме без текста вокруг.",
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _with_validation_trace(frame: PlanningFrame, validation: FrameValidation) -> PlanningFrame:
+    if not validation.issues:
+        return frame
+    codes = ",".join(issue.code for issue in validation.issues)
+    return _with_trace(frame, f"frame validation ok with issues: {codes}")
+
+
+def _with_trace(frame: PlanningFrame, event: str) -> PlanningFrame:
+    trace = list(frame.trace)
+    if event not in trace:
+        trace.append(event)
+    return frame.model_copy(update={"trace": trace})
+
+
+def _fallback_frame(
+    draft: PlanningFrame,
+    *,
+    domain_map: dict[str, Any],
+    validation: FrameValidation | None,
+    last_error: str,
+) -> PlanningFrame:
+    trace: list[str] = []
+    if validation is not None:
+        trace.append(f"frame validation failed: {validation.signature}")
+    if last_error:
+        trace.append(f"frame parse failed: {last_error}")
+    if _frame_can_compile(draft, domain_map):
+        trace.append("frame fallback: deterministic draft")
+        return draft.model_copy(
+            update={
+                "needs_clarification": False,
+                "clarify_reason": "",
+                "trace": _unique([*draft.trace, *trace]),
+            }
+        )
+    reason = _clarify_hint(validation, last_error)
+    return draft.model_copy(
+        update={
+            "needs_clarification": True,
+            "clarify_reason": reason,
+            "confidence": 0.0,
+            "trace": _unique([*draft.trace, *trace]),
+        }
+    )
+
+
+def _clarify_hint(validation: FrameValidation | None, last_error: str) -> str:
+    if validation is not None:
+        for issue in validation.issues:
+            if issue.hint:
+                return issue.hint
+        if validation.issues:
+            return validation.issues[0].message
+    if last_error:
+        return "уточните, с какой сущностью работать"
+    return "уточните цель запроса"
+
+
+def _frame_can_compile(frame: PlanningFrame, domain_map: dict[str, Any]) -> bool:
+    if frame.target not in _entity_names(domain_map):
+        return False
+    ranked = rank_protocol_cards(frame, domain_slice=None)
+    return bool(ranked and ranked[0].score > 0)
+
+
+def _with_composite_confidence(
+    frame: PlanningFrame,
+    draft: PlanningFrame,
+    nlu: NluFeatures,
+    domain_map: dict[str, Any],
+) -> PlanningFrame:
+    ranked = rank_protocol_cards(frame, domain_slice=None)
+    breakdown = composite_confidence(
+        frame,
+        draft=draft,
+        nlu=nlu,
+        ranked=ranked,
+        domain_map=domain_map,
+    )
+    trace = list(frame.trace)
+    trace.append(f"frame confidence: {breakdown.score:.2f}")
+    return frame.model_copy(
+        update={
+            "confidence": breakdown.score,
+            "confidence_factors": breakdown.factors,
+            "trace": _unique(trace),
+        }
+    )
+
+
+def _apply_decomposition(
+    query: str,
+    nlu: NluFeatures,
+    frame: PlanningFrame,
+    domain_map: dict[str, Any],
+) -> PlanningFrame:
+    subtasks = decompose_query(query, nlu=nlu, domain_map=domain_map)
+    if not subtasks:
+        return frame
+    return frame.model_copy(
+        update={
+            "subtasks": subtasks,
+            "trace": _unique([*frame.trace, f"frame decomposed: {len(subtasks)}"]),
+        }
+    )
+
+
+def decompose_query(
+    query: str,
+    *,
+    nlu: NluFeatures | None = None,
+    domain_map: dict[str, Any] | None = None,
+) -> list[PlanningFrame]:
+    del nlu
+    domain_map = domain_map or load_domain_map()
+    clauses = _split_clauses(query)
+    if len(clauses) < 2 or len(clauses) > 3:
+        return []
+    frames: list[PlanningFrame] = []
+    for clause in clauses:
+        clause_nlu = preprocess(clause)
+        clause_frame = _draft_frame(clause, clause_nlu, domain_map)
+        if not clause_frame.target or not _frame_can_compile(clause_frame, domain_map):
+            return []
+        frames.append(clause_frame)
+    signatures = {(item.target, item.operation) for item in frames}
+    return frames if len(signatures) > 1 else []
+
+
+def _split_clauses(query: str) -> list[str]:
+    normalized = query.lower().replace("\u0451", "е")
+    parts: list[str] = []
+    start = 0
+    for match in _CLAUSE_SPLIT_RE.finditer(normalized):
+        part = query[start : match.start()].strip(" ,;")
+        if part:
+            parts.append(part)
+        start = match.end()
+    tail = query[start:].strip(" ,;")
+    if tail:
+        parts.append(tail)
+    return parts
 
 
 def _nlu_payload(nlu: NluFeatures) -> dict[str, Any]:
@@ -266,6 +468,7 @@ def _cardinality_from_nlu(query: str, nlu: NluFeatures, selector: dict[str, str]
             "незаверш",
             "неподпис",
             "остались",
+            "кажд",
         ),
     ):
         return "all"
@@ -434,4 +637,4 @@ def _unique(values: Iterable[str]) -> list[str]:
     return out
 
 
-__all__ = ["intent_frame_parser"]
+__all__ = ["MAX_FRAME_REFINES", "decompose_query", "intent_frame_parser"]

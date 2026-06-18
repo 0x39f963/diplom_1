@@ -43,6 +43,7 @@ def trace_plan(
         "findings_tools": [finding.tool for finding in findings],
         "trace": list(plan.trace),
         "clarify_question": plan.clarify_question,
+        "clarify_code": plan.clarify_code,
         "plan_reused": plan_reused,
         "plan_attempts": plan_attempts,
         "rebuild_reason": rebuild_reason,

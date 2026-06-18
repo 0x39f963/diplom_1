@@ -118,3 +118,64 @@ def test_compile_roleless_single_party_asks_to_clarify() -> None:
 
     assert plan.status == "awaiting_clarification"
     assert "роль" in plan.clarify_question
+
+
+def test_high_confidence_compiled_plan_does_not_clarify() -> None:
+    plan = compile_plan(_frame(selector={"contract_id": "CT-1"}, confidence=0.9))
+
+    assert plan.status == "in_progress"
+    assert plan.clarify_question == ""
+    assert plan.clarify_code == ""
+
+
+def test_low_confidence_frame_asks_targeted_clarify() -> None:
+    plan = compile_plan(_frame(selector={"contract_id": "CT-1"}, confidence=0.2))
+
+    assert plan.status == "awaiting_clarification"
+    assert plan.clarify_code == "low_confidence"
+    assert "сущность" in plan.clarify_question
+
+
+def test_write_like_missing_slot_uses_write_confirm_code() -> None:
+    plan = compile_plan(
+        _frame(
+            operation="download",
+            target="Document",
+            relation="documents",
+            selector={"contract_id": "CT-1"},
+            output="value",
+            confidence=0.9,
+        )
+    )
+
+    assert plan.status == "awaiting_clarification"
+    assert plan.clarify_code == "write_confirm"
+    assert "документ" in plan.clarify_question
+
+
+def test_compile_composite_plan_merges_subtasks_in_order() -> None:
+    plan = compile_plan(
+        _frame(
+            target="Creative",
+            selector={"creative_id": "CR-1"},
+            output="card",
+            subtasks=[
+                _frame(target="Creative", selector={"creative_id": "CR-1"}, output="card"),
+                _frame(
+                    operation="list",
+                    target="Document",
+                    relation="documents",
+                    cardinality="all",
+                    selector={"contract_id": "CT-1"},
+                    output="list",
+                ),
+            ],
+            confidence=0.9,
+        )
+    )
+
+    tools = [step.tool for item in plan.items for step in item.tool_calls]
+    assert plan.strategy == "compiled:composite"
+    assert tools == ["eva_get_creative_status", "eva_list_contract_documents"]
+    list_documents = next(item for item in plan.items if item.id == "list_documents")
+    assert list_documents.depends_on

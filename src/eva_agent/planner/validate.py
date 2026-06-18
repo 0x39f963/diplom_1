@@ -25,7 +25,7 @@ def validate_plan(plan: TodoPlan) -> TodoPlan:
     _validate_step_order(plan, violations)
     _validate_from_refs(plan, violations)
     _validate_depends_on(plan, violations)
-    _validate_required_inputs(plan)
+    _validate_required_inputs(plan, violations)
     _validate_mandatory(plan, violations)
 
     if plan.confidence < PLANNER_MIN_CONFIDENCE:
@@ -156,7 +156,7 @@ def _validate_depends_on(plan: TodoPlan, violations: list[str]) -> None:
                 _add_blocker(todo, "dependency cycle")
 
 
-def _validate_required_inputs(plan: TodoPlan) -> None:
+def _validate_required_inputs(plan: TodoPlan, violations: list[str]) -> None:
     for todo in plan.items:
         spec = CATALOG.get(todo.id)
         if spec is None or todo.status in ("blocked", "skipped"):
@@ -167,6 +167,7 @@ def _validate_required_inputs(plan: TodoPlan) -> None:
             todo.status = "blocked"
             blocker = spec.blockers[0] if spec.blockers else f"missing input: {required}"
             _add_blocker(todo, blocker)
+            violations.append(blocker)
 
 
 def _validate_mandatory(plan: TodoPlan, violations: list[str]) -> None:

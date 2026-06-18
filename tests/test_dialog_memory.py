@@ -9,6 +9,7 @@ import pytest
 import eva_agent.dialog.memory_agent as memory_agent_module
 import eva_agent.nodes.agents as agents_module
 import eva_agent.nodes.domain_nodes as domain_nodes
+import eva_agent.nodes.frame_parser as frame_parser_module
 import eva_agent.nodes.guards as guards_module
 from eva_agent.dialog.models import DialogMeaning
 from eva_agent.dialog.store import DialogStore, get_store, reset_store
@@ -17,6 +18,7 @@ from eva_agent.graph import build_graph
 from eva_agent.llm.base import LLMResponse
 from eva_agent.nodes.dialog_nodes import load_context, save_turn
 from eva_agent.security.verdict import GuardVerdict
+from eva_agent.settings import settings
 from eva_agent.state import AgentState
 from eva_agent.tracing import run_request
 
@@ -42,12 +44,13 @@ class _StaticClient:
         *,
         temperature: float | None = None,
         json_mode: bool = False,
+        schema: dict[str, Any] | None = None,
     ) -> LLMResponse:
         self.calls += 1
         assert system
         assert user
         assert temperature == 0.0
-        assert json_mode is True
+        assert json_mode is True or schema is not None
         return LLMResponse(text=self.text, model="fake", backend="fake")
 
 
@@ -59,7 +62,9 @@ class _AgentClient:
         *,
         temperature: float | None = None,
         json_mode: bool = False,
+        schema: dict[str, Any] | None = None,
     ) -> LLMResponse:
+        del schema
         assert user
         if "оркестратор" in system:
             payload = {
@@ -204,6 +209,7 @@ def test_multi_turn_continuation_replans_and_saves_history(
     dialog_db: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(settings, "planner_use_protocol_compiler", False)
     build_calls = 0
 
     def fake_detect_injection(user_input: str, untrusted_data: str = "") -> GuardVerdict:
@@ -243,6 +249,21 @@ def test_multi_turn_continuation_replans_and_saves_history(
         return memory_client
 
     domain_client = _StaticClient('{"entities":["Contract","ContractParty","Counterparty"]}')
+    frame_payload = {
+        "operation": "read",
+        "target": "ContractParty",
+        "relation": "parties",
+        "fields": [],
+        "filters": {"date_hint": "none", "status": []},
+        "cardinality": "one",
+        "selector": {"role": "executor"},
+        "output": "card",
+        "subtasks": [],
+        "needs_clarification": False,
+        "clarify_reason": "",
+        "confidence": 0.9,
+    }
+    frame_client = _StaticClient(json.dumps(frame_payload, ensure_ascii=False))
 
     def fake_get_domain_client(role: str) -> _StaticClient:
         assert role == "domain"
@@ -253,6 +274,8 @@ def test_multi_turn_continuation_replans_and_saves_history(
     monkeypatch.setattr(agents_module, "build_plan", fake_build_plan)
     monkeypatch.setattr(memory_agent_module, "get_client", fake_get_memory_client)
     monkeypatch.setattr(domain_nodes, "get_client", fake_get_domain_client)
+    monkeypatch.setattr(frame_parser_module, "get_client", lambda role: frame_client)
+    monkeypatch.setattr(frame_parser_module, "retrieve_examples", lambda query, k=5: [])
 
     graph = build_graph()
     sid = "multi-turn"

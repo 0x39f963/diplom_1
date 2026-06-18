@@ -81,13 +81,34 @@ def _compile_single_plan(
 ) -> TodoPlan:
     if frame.needs_clarification:
         if _can_compile_global_overview(frame):
-            frame = frame.model_copy(update={"needs_clarification": False, "clarify_reason": ""})
+            frame = _without_clarification(frame, "clarify overridden: global overview")
         else:
+            plan = _clarify_override_plan(
+                frame,
+                domain_slice=domain_slice,
+                validate=validate,
+            )
+            if plan is not None:
+                return plan
             return _clarify_plan(
                 frame,
                 frame.clarify_reason or "недостаточно входных данных",
                 code=_code_from_reason(frame.clarify_reason),
             )
+    return _compile_resolved_plan(frame, domain_slice=domain_slice, validate=validate)
+
+
+def _compile_resolved_plan(
+    frame: PlanningFrame,
+    *,
+    domain_slice: DomainSlice | None,
+    validate: bool,
+) -> TodoPlan:
+    slots = _slots(frame)
+    frame = _missing_documents_frame(frame, slots)
+    frame = _roleless_party_all_frame(frame, slots)
+    slots = _slots(frame)
+
     if not frame.target:
         return _clarify_plan(frame, "не определена целевая сущность", code="unknown_target")
     if frame.target not in {card.target for card in PROTOCOL_CARDS}:
@@ -112,12 +133,9 @@ def _compile_single_plan(
         )
 
     selected = ranked[0]
-    slots = _slots(frame)
     ambiguity = _ambiguity_reason(frame, selected.card, slots)
     if ambiguity:
         return _clarify_plan(frame, ambiguity, code="ambiguous_role", missing_slot="role")
-    if frame.confidence < TAU_CLARIFY:
-        return _clarify_plan(frame, "низкая уверенность разбора", code="low_confidence")
     write_slot = _missing_write_slot(frame, selected)
     if write_slot:
         return _clarify_plan(
@@ -126,13 +144,89 @@ def _compile_single_plan(
             code="write_confirm",
             missing_slot=write_slot,
         )
+    low_confidence_overridden = False
+    if frame.confidence < TAU_CLARIFY:
+        if not _has_domain_plan_signal(frame, slots):
+            return _clarify_plan(frame, "низкая уверенность разбора", code="low_confidence")
+        low_confidence_overridden = True
 
     plan = _build_plan(frame, selected.card, slots)
+    if low_confidence_overridden:
+        plan.confidence = max(plan.confidence, TAU_CLARIFY)
+        plan.trace.append("clarify overridden: low confidence with domain signal")
     plan.trace.extend(_rank_trace(ranked[:3], selected))
     if validate:
         plan = validate_plan(plan)
         _ensure_clarify_code(plan, frame, selected)
     return plan
+
+
+def _clarify_override_plan(
+    frame: PlanningFrame,
+    *,
+    domain_slice: DomainSlice | None,
+    validate: bool,
+) -> TodoPlan | None:
+    slots = _slots(frame)
+    if not _can_try_clarify_override(frame, slots):
+        return None
+    candidate = _without_clarification(frame, "clarify overridden: safe read-only plan exists")
+    plan = _compile_resolved_plan(candidate, domain_slice=domain_slice, validate=validate)
+    if _plan_is_usable(plan):
+        plan.trace.append("clarify overridden: safe read-only plan exists")
+        return plan
+    fallback = _fallback_read_plan(candidate, domain_slice=domain_slice)
+    if fallback is not None and _plan_is_usable(fallback):
+        fallback.trace.append("clarify overridden: safe read-only plan exists")
+        return fallback
+    return None
+
+
+def _without_clarification(frame: PlanningFrame, event: str) -> PlanningFrame:
+    trace = list(frame.trace)
+    trace.append(event)
+    return frame.model_copy(
+        update={
+            "needs_clarification": False,
+            "clarify_reason": "",
+            "trace": _unique(trace),
+        }
+    )
+
+
+def _plan_is_usable(plan: TodoPlan) -> bool:
+    return plan.status != "awaiting_clarification" and not plan.is_empty
+
+
+def _can_try_clarify_override(frame: PlanningFrame, slots: dict[str, str]) -> bool:
+    if _invalid_clarify_reason(frame, slots):
+        return True
+    return _has_domain_plan_signal(frame, slots)
+
+
+def _invalid_clarify_reason(frame: PlanningFrame, slots: dict[str, str]) -> bool:
+    reason = frame.clarify_reason.lower()
+    if "роль" in reason and frame.relation == "parties" and frame.cardinality in {"all", "n"}:
+        return True
+    if ("id" in reason or "договор" in reason) and frame.operation == "list" and frame.cardinality == "all":
+        return True
+    if ("id" in reason or "договор" in reason) and _has_search_signal(frame, slots):
+        return True
+    return ("увер" in reason or "confidence" in reason) and _has_explicit_selector(slots)
+
+
+def _has_domain_plan_signal(frame: PlanningFrame, slots: dict[str, str]) -> bool:
+    if _has_explicit_selector(slots):
+        return True
+    if _norm(frame.relation) in _SPECIFIC_RELATIONS and _has_slot(slots, "contract_id"):
+        return True
+    if _has_search_signal(frame, slots):
+        return True
+    return frame.operation == "list" and frame.cardinality == "all"
+
+
+def _has_explicit_selector(slots: dict[str, str]) -> bool:
+    return any(_has_slot(slots, slot) for slot in _SPECIFIC_SELECTOR_SLOTS)
 
 
 def compile_frame(frame: PlanningFrame, domain_slice: DomainSlice | None = None) -> TodoPlan:
@@ -219,6 +313,48 @@ def _canonical_relation(target: str, relation: str | None) -> str | None:
     if target in {"Placement", "Creative"} and normalized in {"contract_id", "entity_id"}:
         return "placements"
     return relation
+
+
+def _roleless_party_all_frame(frame: PlanningFrame, slots: dict[str, str]) -> PlanningFrame:
+    if _norm(frame.relation) != "parties":
+        return frame
+    if _has_slot(slots, "role") or not _has_slot(slots, "contract_id"):
+        return frame
+    if frame.target not in {"Contract", "ContractParty", "Counterparty"}:
+        return frame
+    if frame.operation == "list" and frame.cardinality == "all":
+        return frame
+    trace = list(frame.trace)
+    trace.append("compiler party without role: all parties")
+    target = "ContractParty" if frame.target == "Contract" else frame.target
+    return frame.model_copy(
+        update={
+            "operation": "list",
+            "target": target,
+            "cardinality": "all",
+            "output": "list",
+            "trace": _unique(trace),
+        }
+    )
+
+
+def _missing_documents_frame(frame: PlanningFrame, slots: dict[str, str]) -> PlanningFrame:
+    if _norm(frame.relation) != "documents":
+        return frame
+    if "missing" not in frame.fields or not _has_slot(slots, "contract_id") or _has_slot(slots, "doc_id"):
+        return frame
+    if frame.operation == "diagnose" and frame.cardinality == "all":
+        return frame
+    trace = list(frame.trace)
+    trace.append("compiler documents missing: diagnose all")
+    return frame.model_copy(
+        update={
+            "operation": "diagnose",
+            "cardinality": "all",
+            "output": "list",
+            "trace": _unique(trace),
+        }
+    )
 
 
 def _same_task(left: PlanningFrame, right: PlanningFrame) -> bool:
@@ -485,12 +621,7 @@ def _slots(frame: PlanningFrame) -> dict[str, str]:
 
 
 def _ambiguity_reason(frame: PlanningFrame, card: ProtocolCard, slots: dict[str, str]) -> str:
-    if (
-        card.protocol_id == "party_lookup"
-        and frame.cardinality == "one"
-        and not _has_slot(slots, "role")
-    ):
-        return "нужно указать роль стороны: заказчик или исполнитель"
+    del frame, card, slots
     return ""
 
 
@@ -529,6 +660,9 @@ def _fallback_read_plan(
             continue
         plan = _build_plan(candidate, selected.card, slots)
         plan.trace.append("compiler fallback: minimal read")
+        if plan.confidence < TAU_CLARIFY and _has_domain_plan_signal(candidate, slots):
+            plan.confidence = max(plan.confidence, TAU_CLARIFY)
+            plan.trace.append("clarify overridden: low confidence with domain signal")
         plan.trace.extend(_rank_trace(ranked[:3], selected))
         return validate_plan(plan)
     return None

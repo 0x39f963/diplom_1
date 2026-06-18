@@ -107,7 +107,7 @@ def test_scoring_creatives_by_contract_prefers_placements_over_contract_card() -
     assert [step.tool for item in plan.items for step in item.tool_calls] == ["eva_list_placements"]
 
 
-def test_compile_roleless_single_party_asks_to_clarify() -> None:
+def test_compile_roleless_single_party_fetches_all_parties() -> None:
     plan = compile_plan(
         _frame(
             target="ContractParty",
@@ -116,8 +116,26 @@ def test_compile_roleless_single_party_asks_to_clarify() -> None:
         )
     )
 
-    assert plan.status == "awaiting_clarification"
-    assert "роль" in plan.clarify_question
+    tools = [step.tool for item in plan.items for step in item.tool_calls]
+    assert plan.status == "in_progress"
+    assert plan.protocol_id == "party_lookup"
+    assert "eva_get_contract_parties" in tools
+    assert "resolve_party_role" not in [item.id for item in plan.items]
+
+
+def test_compile_counterparty_status_by_contract_fetches_parties_chain() -> None:
+    plan = compile_plan(
+        _frame(
+            target="ContractParty",
+            relation="parties",
+            fields=["status"],
+            selector={"contract_id": "CT-2"},
+        )
+    )
+
+    tools = [step.tool for item in plan.items for step in item.tool_calls]
+    assert plan.status == "in_progress"
+    assert tools == ["eva_get_contract_parties", "eva_get_counterparty"]
 
 
 def test_high_confidence_compiled_plan_does_not_clarify() -> None:
@@ -128,12 +146,70 @@ def test_high_confidence_compiled_plan_does_not_clarify() -> None:
     assert plan.clarify_code == ""
 
 
-def test_low_confidence_frame_asks_targeted_clarify() -> None:
+def test_low_confidence_with_explicit_id_compiles() -> None:
     plan = compile_plan(_frame(selector={"contract_id": "CT-1"}, confidence=0.2))
+
+    assert plan.status == "in_progress"
+    assert plan.clarify_code == ""
+    assert "low confidence" in " ".join(plan.trace)
+
+
+def test_low_confidence_without_domain_signal_asks_targeted_clarify() -> None:
+    plan = compile_plan(_frame(confidence=0.2))
 
     assert plan.status == "awaiting_clarification"
     assert plan.clarify_code == "low_confidence"
     assert "сущность" in plan.clarify_question
+
+
+def test_needs_clarification_is_overridden_when_safe_plan_exists() -> None:
+    plan = compile_plan(
+        _frame(
+            target="Document",
+            relation="documents",
+            fields=["missing"],
+            selector={"contract_id": "CT-2"},
+            needs_clarification=True,
+            clarify_reason="низкая уверенность разбора",
+            confidence=0.2,
+        )
+    )
+
+    tools = [step.tool for item in plan.items for step in item.tool_calls]
+    assert plan.status == "in_progress"
+    assert "eva_list_contract_documents" in tools
+    assert plan.clarify_code == ""
+    assert "clarify overridden: safe read-only plan exists" in plan.trace
+
+
+def test_needs_clarification_uses_fallback_read_plan() -> None:
+    plan = compile_plan(
+        _frame(
+            target="Document",
+            relation="documents",
+            selector={"contract_id": "CT-2"},
+            needs_clarification=True,
+            clarify_reason="нет doc_id",
+            confidence=0.2,
+        )
+    )
+
+    tools = [step.tool for item in plan.items for step in item.tool_calls]
+    assert plan.status == "in_progress"
+    assert tools == ["eva_list_contract_documents"]
+    assert "clarify overridden: safe read-only plan exists" in plan.trace
+
+
+def test_needs_clarification_without_domain_signal_stays_clarify() -> None:
+    plan = compile_plan(
+        _frame(
+            needs_clarification=True,
+            clarify_reason="уточните договор",
+        )
+    )
+
+    assert plan.status == "awaiting_clarification"
+    assert plan.protocol_id == "clarify_first"
 
 
 def test_write_like_missing_slot_uses_write_confirm_code() -> None:

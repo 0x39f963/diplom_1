@@ -92,6 +92,72 @@ def test_intent_frame_parser_uses_schema_and_deterministic_hints(monkeypatch: An
     assert result["checklist"].entities == ["ContractParty", "Contract", "Counterparty"]
 
 
+def test_intent_frame_parser_relation_dominates_llm_contract_target(monkeypatch: Any) -> None:
+    client = _FrameClient(
+        [
+            _base_frame(
+                target="Contract",
+                relation="parties",
+                output="card",
+            )
+        ]
+    )
+    monkeypatch.setattr(frame_parser, "get_client", lambda role: client)
+    monkeypatch.setattr(frame_parser, "retrieve_examples", lambda query, k=5: [])
+
+    result = frame_parser.intent_frame_parser(
+        AgentState(
+            user_input_raw="Покажи стороны по договору CT-1",
+            intent=Intent(kind="mixed_diagnostic", confidence=0.9),
+            nlu=preprocess("Покажи стороны по договору CT-1"),
+        )
+    )
+
+    frame = result["frame"]
+    assert frame.target == "ContractParty"
+    assert frame.relation == "parties"
+    assert frame.selector["contract_id"] == "CT-1"
+    assert result["debug"]["frame"]["normalized"]["target"] == "ContractParty"
+
+
+def test_intent_frame_parser_infers_party_relation_from_nlu(monkeypatch: Any) -> None:
+    client = _FrameClient([_base_frame(target="Contract", relation=None)])
+    monkeypatch.setattr(frame_parser, "get_client", lambda role: client)
+    monkeypatch.setattr(frame_parser, "retrieve_examples", lambda query, k=5: [])
+
+    result = frame_parser.intent_frame_parser(
+        AgentState(
+            user_input_raw="С кем заключен договор CT-1, выведи контрагентов",
+            intent=Intent(kind="mixed_diagnostic", confidence=0.9),
+            nlu=preprocess("С кем заключен договор CT-1, выведи контрагентов"),
+        )
+    )
+
+    frame = result["frame"]
+    assert frame.target == "ContractParty"
+    assert frame.relation == "parties"
+    assert frame.selector["contract_id"] == "CT-1"
+
+
+def test_intent_frame_parser_infers_documents_relation_from_nlu(monkeypatch: Any) -> None:
+    client = _FrameClient([_base_frame(target="Contract", relation=None)])
+    monkeypatch.setattr(frame_parser, "get_client", lambda role: client)
+    monkeypatch.setattr(frame_parser, "retrieve_examples", lambda query, k=5: [])
+
+    result = frame_parser.intent_frame_parser(
+        AgentState(
+            user_input_raw="Покажи чего не хватает в договоре CT-2",
+            intent=Intent(kind="mixed_diagnostic", confidence=0.9),
+            nlu=preprocess("Покажи чего не хватает в договоре CT-2"),
+        )
+    )
+
+    frame = result["frame"]
+    assert frame.target == "Document"
+    assert frame.relation == "documents"
+    assert frame.selector["contract_id"] == "CT-2"
+
+
 def test_intent_frame_parser_retries_once_and_returns_clarify_frame(monkeypatch: Any) -> None:
     class BrokenClient:
         calls = 0
@@ -186,7 +252,7 @@ def test_intent_frame_parser_common_queries(monkeypatch: Any) -> None:
                 cardinality="all",
                 output="list",
             ),
-            ("list", "Creative", "placements", "all", {"contract_id": "CT-2"}),
+            ("list", "Placement", "placements", "all", {"contract_id": "CT-2"}),
         ),
         (
             "статус креатива CR-1 и документы по договору CT-1",

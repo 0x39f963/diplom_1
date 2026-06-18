@@ -10,6 +10,7 @@ from typing import Any, cast
 from eva_agent.domain.checklist import EntityCount, PlanningChecklist
 from eva_agent.domain.confidence import composite_confidence
 from eva_agent.domain.frame import FrameFilters, PlanningFrame
+from eva_agent.domain.frame_normalize import normalize_frame, relation_implies_target
 from eva_agent.domain.frame_validate import FrameValidation, validate_frame
 from eva_agent.llm.config import get_client
 from eva_agent.nlu.fewshot import Example, retrieve_examples
@@ -66,6 +67,7 @@ def intent_frame_parser(state: AgentState) -> dict[str, Any]:
             )
             frame = _parse_frame(response.text)
             frame = _merge_deterministic_hints(frame, draft, domain_map)
+            frame = normalize_frame(frame, nlu, domain_map)
             frame = _apply_decomposition(query, nlu, frame, domain_map)
             validation = validate_frame(frame, domain_map=domain_map, draft=draft)
             last_validation = validation
@@ -95,6 +97,7 @@ def intent_frame_parser(state: AgentState) -> dict[str, Any]:
         validation=last_validation,
         last_error=last_error,
     )
+    frame = normalize_frame(frame, nlu, domain_map)
     frame = _apply_decomposition(query, nlu, frame, domain_map)
     frame = _with_composite_confidence(frame, draft, nlu, domain_map)
     return _frame_result(frame, state=state, domain_map=domain_map)
@@ -125,9 +128,22 @@ def _frame_debug(frame: PlanningFrame) -> dict[str, Any]:
         "needs_clarification": frame.needs_clarification,
         "confidence": frame.confidence,
         "confidence_factors": dict(frame.confidence_factors),
+        "normalized": _frame_snapshot(frame),
     }
     log_span_event({"frame": payload})
     return payload
+
+
+def _frame_snapshot(frame: PlanningFrame) -> dict[str, Any]:
+    return {
+        "operation": frame.operation,
+        "target": frame.target,
+        "relation": frame.relation,
+        "selector": dict(frame.selector),
+        "cardinality": frame.cardinality,
+        "needs_clarification": frame.needs_clarification,
+        "clarify_reason": frame.clarify_reason,
+    }
 
 
 def _user_prompt(
@@ -559,7 +575,7 @@ def _merge_deterministic_hints(
     selector.update(draft.selector)
     statuses = _unique([*frame.filters.status, *draft.filters.status])
     date_hint = draft.filters.date_hint if draft.filters.date_hint != "none" else frame.filters.date_hint
-    target = frame.target if frame.target in _entity_names(domain_map) else draft.target
+    target = _merged_target(frame, draft, domain_map)
     operation = frame.operation
     if frame.operation == "read" and draft.operation != "read":
         operation = draft.operation
@@ -584,6 +600,18 @@ def _merge_deterministic_hints(
             "clarify_reason": clarify_reason,
         }
     )
+
+
+def _merged_target(
+    frame: PlanningFrame,
+    draft: PlanningFrame,
+    domain_map: dict[str, Any],
+) -> str:
+    if relation_implies_target(draft.relation, draft.target):
+        return draft.target
+    if frame.target in _entity_names(domain_map):
+        return frame.target
+    return draft.target
 
 
 def _checklist_from_frame(

@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="406" viewBox="0 0 860 406" font-family="Segoe UI, Roboto, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#5b6472"/>
+    </marker>
+    <style>
+      .h{font-size:13px;fill:#0f1117;font-weight:700}
+      .l{font-size:11.5px;fill:#34405a}
+      .m{font-size:11.5px;font-family:'DejaVu Sans Mono',Consolas,monospace;fill:#2d3a52}
+      .edge{stroke:#5b6472;stroke-width:1.6;fill:none;marker-end:url(#arr)}
+    </style>
+  </defs>
+  <rect x="0" y="0" width="860" height="406" fill="#ffffff"/>
+  <text x="28" y="34" font-size="19" font-weight="700" fill="#0f1117">Как устроены механизмы устойчивости</text>
+  <text x="28" y="56" font-size="12.5" fill="#5b6472">каждый - детерминированное правило на своем этапе пайплайна, по классу провала из аудита</text>
+  <rect x="58" y="104" width="144" height="50" rx="8" fill="#e8f0fb" stroke="#3a7bd5" stroke-width="1.5"/>
+  <text class="h" x="74" y="128">input_guard</text>
+  <text class="l" x="74" y="150">защита входа</text>
+  <rect x="258" y="104" width="144" height="50" rx="8" fill="#eef0f4" stroke="#c7ccd6" stroke-width="1.5"/>
+  <text class="h" x="274" y="128">нормализация</text>
+  <text class="l" x="274" y="150">фрейма</text>
+  <path class="edge" d="M202,129.0 L258,129.0"/>
+  <rect x="458" y="104" width="144" height="50" rx="8" fill="#efe9ff" stroke="#7c5cff" stroke-width="1.5"/>
+  <text class="h" x="474" y="128">компилятор</text>
+  <text class="l" x="474" y="150">выбор плана</text>
+  <path class="edge" d="M402,129.0 L458,129.0"/>
+  <rect x="658" y="104" width="144" height="50" rx="8" fill="#fff1de" stroke="#e0a33a" stroke-width="1.5"/>
+  <text class="h" x="674" y="128">покрытие</text>
+  <text class="l" x="674" y="150">атомов</text>
+  <path class="edge" d="M602,129.0 L658,129.0"/>
+  <path d="M130.0,154 L130.0,188" stroke="#5b6472" stroke-width="1.2" fill="none" stroke-dasharray="3 3"/>
+  <rect x="55" y="188" width="150" height="74" rx="8" fill="#eef0f4" stroke="#c7ccd6" stroke-width="1.5"/>
+  <text class="h" x="71" y="212">механизм</text>
+  <text class="l" x="71" y="234">команда против</text>
+  <text class="l" x="71" y="252">инъекции (класс B)</text>
+  <path d="M330.0,154 L330.0,188" stroke="#5b6472" stroke-width="1.2" fill="none" stroke-dasharray="3 3"/>
+  <rect x="255" y="188" width="150" height="74" rx="8" fill="#eef0f4" stroke="#c7ccd6" stroke-width="1.5"/>
+  <text class="h" x="271" y="212">механизм</text>
+  <text class="l" x="271" y="234">связь задает</text>
+  <text class="l" x="271" y="252">цель (класс A)</text>
+  <path d="M530.0,154 L530.0,188" stroke="#5b6472" stroke-width="1.2" fill="none" stroke-dasharray="3 3"/>
+  <rect x="455" y="188" width="150" height="92" rx="8" fill="#eef0f4" stroke="#c7ccd6" stroke-width="1.5"/>
+  <text class="h" x="471" y="212">механизмы</text>
+  <text class="l" x="471" y="234">уточнение по делу (C)</text>
+  <text class="l" x="471" y="252">поиск-resolver (D)</text>
+  <text class="l" x="471" y="270">закон к данным (E)</text>
+  <path d="M730.0,154 L730.0,188" stroke="#5b6472" stroke-width="1.2" fill="none" stroke-dasharray="3 3"/>
+  <rect x="655" y="188" width="150" height="74" rx="8" fill="#eef0f4" stroke="#c7ccd6" stroke-width="1.5"/>
+  <text class="h" x="671" y="212">механизм</text>
+  <text class="l" x="671" y="234">проверка покрытия</text>
+  <text class="l" x="671" y="252">атомов (класс E)</text>
+  <rect x="28" y="306" width="804" height="76" rx="8" fill="#f3f4f7" stroke="#d8dde6" stroke-width="1.3"/>
+  <text x="48" y="328" font-size="12" font-weight="700" fill="#34405a">Принцип построения:</text>
+  <text x="48" y="346" font-size="12" font-weight="400" fill="#34405a">разложить провалы по классам (аудит R5), на каждый класс - детерминированное правило на своем этапе.</text>
+  <text x="48" y="364" font-size="12" font-weight="400" fill="#34405a">Правила работают на любой модели, поэтому прирост получили и слабые модели.</text>
+</svg>
